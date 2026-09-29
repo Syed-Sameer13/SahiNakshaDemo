@@ -95,11 +95,14 @@ export default function UploadPanel({ onComplete, history = [], onOpenPrevious, 
   }
 
   return (
-    <main className="app-shell">
-      <section className="hero">
-        <div className="badge">SAHINAKSHA • AI CADASTRAL ENGINE</div>
-        <h1>Sahi<span>Naksha</span></h1>
-        <p>AI segmentation • GIS fusion • topology repair • survey validation</p>
+    <main className="gov-portal">
+      <div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div><div className="gov-tools"><span>Skip to main content</span><span>हिन्दी</span><span>English</span><span>A−</span><span>A</span><span>A+</span></div></div>
+      <header className="gov-header"><div className="gov-brand"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/120px-Government_of_India_logo.svg.png" alt="Government of India emblem" /><div><div className="gov-hindi">ग्रामीण विकास मंत्रालय</div><div className="gov-title">MINISTRY OF RURAL DEVELOPMENT</div><div className="gov-subtitle">GOVERNMENT OF INDIA</div></div></div><div className="sahinaksha-brand"><strong>SahiNaksha</strong><span>AI-Assisted Cadastral Mapping</span></div></header>
+      <nav className="gov-nav"><span>Home</span><span>About SahiNaksha</span><span>Land &amp; Survey</span><span>GIS Services</span><span>Reports</span><span>Help &amp; Support</span></nav>
+      <div className="gov-notice"><b>Prototype Portal</b> — SahiNaksha is an SIH 2026 demonstration system and is not an official Government of India service.</div>
+      <section className="hero gov-content" id="main-content">
+        <div className="gov-page-title"><span>Digital Land Records &amp; Geospatial Services</span><small>Department of Land Resources • Demonstration Portal</small></div>
+        <div className="service-intro"><div><span className="badge">SAHINAKSHA • GEOSPATIAL DEMONSTRATION</span><h1>AI-Assisted <span>Cadastral Mapping</span></h1><p>Drone imagery processing, GIS parcel refinement, topology validation and human-reviewed map generation.</p></div><div className="service-seal">GIS<br/><small>e-Governance</small></div></div>
 
         <button
           className="previous-works-button"
@@ -153,9 +156,10 @@ export default function UploadPanel({ onComplete, history = [], onOpenPrevious, 
           </div>
         )}
 
+        <div className="workflow-heading"><span>Online Service</span><h2>Generate Preliminary Cadastral Map</h2><p>Upload the required survey imagery and optional GIS reference layers to begin processing.</p></div>
         <div className="upload-card">
-          <h2>Generate a preliminary cadastral map</h2>
-          <p>Minimum input is a high-resolution drone/orthomosaic image. Add GIS, DSM and ground-truth layers to improve and measure the result.</p>
+          <div className="service-steps"><div><b>01</b><span>Upload imagery</span></div><div><b>02</b><span>Run geospatial analysis</span></div><div><b>03</b><span>Review &amp; validate</span></div></div>
+          <p>Minimum input is a high-resolution drone/orthomosaic image. Existing parcel GIS, DSM and ground-truth layers can be added for additional validation.</p>
 
           <label className="file-picker">
             <input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={(e) => chooseImage(e.target.files?.[0])}/>
@@ -179,9 +183,8 @@ export default function UploadPanel({ onComplete, history = [], onOpenPrevious, 
 
           {preview && <img className="preview" src={preview} alt="Selected aerial preview"/>}
 
-          <div className="muted">
-            API: {API}
-          </div>
+          <div className="gov-form-note"><b>Service note:</b> Generated maps are preliminary outputs for demonstration and survey-support workflows. They require authoritative cadastral and field validation before legal use.</div>
+          <div className="muted api-note">Service endpoint: {API}</div>
 
           {error && <p className="error">{error}</p>}
 
@@ -190,6 +193,7 @@ export default function UploadPanel({ onComplete, history = [], onOpenPrevious, 
           </button>
         </div>
       </section>
+      <footer className="gov-footer"><div><b>Government of India</b><br/>Ministry of Rural Development • SahiNaksha Demonstration Portal</div><div>Privacy Policy &nbsp;|&nbsp; Terms &nbsp;|&nbsp; Accessibility &nbsp;|&nbsp; Contact</div></footer>
     </main>
   );
 }
