@@ -2,8 +2,6 @@
 from .hotosm_building_segmentation import run_hotosm_building_segmentation
 from .ai_segmentation import run_ai_segmentation as run_sam_segmentation
 from .sam_refinement import refine_hotosm_buildings
-from .yolo_segmentation import run_yolo_segmentation
-from .trained_segmentation import run_trained_segmentation
 
 
 def run_ai_segmentation(image_path: str):
@@ -41,7 +39,11 @@ def run_ai_segmentation(image_path: str):
         }
 
     # Compatibility fallbacks: these are deliberately not the preferred path.
-    yolo_result, yolo_info = run_yolo_segmentation(image_path)
+    try:
+        from .yolo_segmentation import run_yolo_segmentation
+        yolo_result, yolo_info = run_yolo_segmentation(image_path)
+    except Exception as exc:
+        yolo_result, yolo_info = None, {"status": f"YOLO fallback unavailable: {exc}"}
     if yolo_result is not None:
         return yolo_result, {
             **yolo_info,
@@ -50,7 +52,11 @@ def run_ai_segmentation(image_path: str):
             "strategy": "custom_yolo_compatibility_fallback",
         }
 
-    trained_result, trained_info = run_trained_segmentation(image_path)
+    try:
+        from .trained_segmentation import run_trained_segmentation
+        trained_result, trained_info = run_trained_segmentation(image_path)
+    except Exception as exc:
+        trained_result, trained_info = None, {"status": f"trained fallback unavailable: {exc}"}
     if trained_result is not None:
         return trained_result, {
             **trained_info,
