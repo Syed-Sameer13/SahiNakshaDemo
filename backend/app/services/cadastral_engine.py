@@ -81,6 +81,11 @@ def load_reference_parcels(reference_path, image_path):
     edges = _edge_map(image)
 
     output = []
+    source_crs = None
+    crs_data = payload.get("crs")
+    if isinstance(crs_data, dict):
+        props = crs_data.get("properties", {})
+        source_crs = props.get("name") or props.get("href")
     index = 1
 
     for feature in features:
@@ -126,7 +131,10 @@ def load_reference_parcels(reference_path, image_path):
             })
             index += 1
 
-    return feature_collection(output)
+    result = feature_collection(output)
+    if source_crs:
+        result["source_crs"] = source_crs
+    return result
 
 
 def classify_parcel_landuse(parcels, image_path):
