@@ -38,13 +38,13 @@ def run_yolo_segmentation(image_path: str):
     if image is None:
         return None, {"provider": "custom_yolo", "status": "image read failed"}
     h, w = image.shape[:2]
-    conf = float(os.getenv("SAHINAKSHA_YOLO_CONF", "0.35"))
-    imgsz = int(os.getenv("SAHINAKSHA_YOLO_IMGSZ", "768"))
+    conf = float(os.getenv("SAHINAKSHA_YOLO_CONF", "0.25"))
+    imgsz = int(os.getenv("SAHINAKSHA_YOLO_IMGSZ", "1024"))
     device = os.getenv("SAHINAKSHA_YOLO_DEVICE", "0")
 
     try:
         model = YOLO(str(path))
-        result = model.predict(source=image, conf=conf, imgsz=imgsz, device=device, verbose=False)[0]
+        result = model.predict(\n            source=image,\n            conf=conf,\n            imgsz=imgsz,\n            device=device,\n            retina_masks=True,\n            augment=True,\n            verbose=False,\n        )[0]
     except Exception as exc:
         return None, {"provider": "custom_yolo", "status": f"inference failed: {exc}"}
 
@@ -67,7 +67,7 @@ def run_yolo_segmentation(image_path: str):
                     "feature_type": feature_type,
                     "confidence": round(float(score), 4),
                     "model_provider": "sahinaksha_custom_yolo",
-                    "review_required": float(score) < 0.65,
+                    "review_required": float(score) < 0.65,\n                    "boundary_quality": "high" if float(score) >= 0.75 else "review",
                 },
             }
             (buildings if feature_type == "building_footprint" else roads).append(feature)
@@ -80,5 +80,5 @@ def run_yolo_segmentation(image_path: str):
         "road_count": len(roads),
         "input_size": [w, h],
         "confidence_threshold": conf,
-        "message": "Custom model loaded. Parcel ownership boundaries still require GIS/survey evidence.",
+        "message": "Custom model loaded with high-resolution mask inference. Parcel ownership boundaries still require GIS/survey evidence.",
     }
