@@ -1,23 +1,26 @@
-"""Select the strongest available advanced vision pipeline at runtime."""
-from .yolo_segmentation import run_yolo_segmentation
-from .trained_segmentation import run_trained_segmentation
+"""Select the advanced pretrained vision pipeline at runtime."""
 from .hotosm_building_segmentation import run_hotosm_building_segmentation
 from .ai_segmentation import run_ai_segmentation as run_sam_segmentation
 from .sam_refinement import refine_hotosm_buildings
+from .yolo_segmentation import run_yolo_segmentation
+from .trained_segmentation import run_trained_segmentation
 
 
 def run_ai_segmentation(image_path: str):
-    """Prefer HOTOSM semantic detection + SAM boundary refinement.
+    """HOTOSM/DINOv3 proposes buildings; SAM refines their boundaries.
 
-    Custom project-specific models remain a last-resort fallback. This keeps the
-    prototype aligned with the documented advanced pretrained-model strategy.
+    Project-specific YOLO/pixel models are compatibility fallbacks only.
     """
     hotosm_result, hotosm_info = run_hotosm_building_segmentation(image_path)
+
     if hotosm_result is not None:
-        buildings = hotosm_result.get("buildings", {"type": "FeatureCollection", "features": []})
-        refined_buildings, refinement_info = refine_hotosm_buildings(image_path, buildings)
-        hotosm_result["buildings"] = refined_buildings
-        return hotosm_result, {
+        buildings = hotosm_result.get(
+            "buildings",
+            {"type": "FeatureCollection", "features": []},
+        )
+        refined, refinement_info = refine_hotosm_buildings(image_path, buildings)
+        hotosm_result["buildings"] = refined
+        hotosm_info = {
             **hotosm_info,
             "provider": "hotosm_dinov3s_buildings",
             "boundary_refinement": refinement_info,
@@ -26,7 +29,9 @@ def run_ai_segmentation(image_path: str):
                 "hotosm_candidate_plus_sam_boundary_refinement",
             ),
         }
+        return hotosm_result, hotosm_info
 
+    # If HOTOSM is unavailable, use the existing standalone SAM pipeline.
     sam_result, sam_info = run_sam_segmentation(image_path)
     if sam_result is not None:
         return sam_result, {
@@ -35,13 +40,14 @@ def run_ai_segmentation(image_path: str):
             "strategy": "standalone_sam_fallback",
         }
 
+    # Compatibility fallbacks: these are deliberately not the preferred path.
     yolo_result, yolo_info = run_yolo_segmentation(image_path)
     if yolo_result is not None:
         return yolo_result, {
             **yolo_info,
             "fallback_after_hotosm": hotosm_info.get("status"),
             "fallback_after_sam": sam_info.get("status"),
-            "strategy": "custom_yolo_fallback",
+            "strategy": "custom_yolo_compatibility_fallback",
         }
 
     trained_result, trained_info = run_trained_segmentation(image_path)
@@ -51,12 +57,12 @@ def run_ai_segmentation(image_path: str):
             "fallback_after_hotosm": hotosm_info.get("status"),
             "fallback_after_sam": sam_info.get("status"),
             "fallback_after_yolo": yolo_info.get("status"),
-            "strategy": "trained_pixel_model_fallback",
+            "strategy": "trained_pixel_compatibility_fallback",
         }
 
     return None, {
         "provider": "none",
-        "status": "HOTOSM, SAM, custom YOLO and trained pixel model unavailable",
+        "status": "Advanced HOTOSM/SAM pipeline unavailable",
         "hotosm": hotosm_info.get("status"),
         "sam": sam_info.get("status"),
         "yolo": yolo_info.get("status"),
