@@ -155,7 +155,7 @@ def refine_hotosm_buildings(image_path: str, buildings: dict):
             "sam_overlap": round(float(overlap), 3),
             "sam_predicted_iou": round(float(item.get("predicted_iou", 0.0)), 3),
             "sam_stability": round(float(item.get("stability_score", 0.0)), 3),
-            "confidence": round(min(0.99, max(0.50, 0.55 * best_score + 0.45 * float(props.get("confidence", 0.5) if isinstance(props.get("confidence"), (int, float)) else 0.5)), 3),
+            "confidence": round(\n                min(\n                    0.99,\n                    max(\n                        0.50,\n                        0.55 * best_score\n                        + 0.45 * float(\n                            props.get("confidence", 0.5)\n                            if isinstance(props.get("confidence"), (int, float))\n                            else 0.5\n                        ),\n                    ),\n                ),\n                3,\n            ),
             "review_required": True,
         })
         refined_features.append({
