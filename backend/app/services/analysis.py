@@ -3,6 +3,8 @@ from .model_router import run_ai_segmentation
 from .validation import validate_parcels
 from .topology_engine import repair_and_validate_parcels
 from .metrics import evaluate_against_ground_truth
+from .area_metrics import enrich_feature_areas
+from .review_score import enrich_review_scores
 from .cadastral_engine import (
     load_reference_parcels,
     classify_parcel_landuse,
@@ -46,6 +48,9 @@ def analyze_image(
         result["parcels"] = classify_parcel_height(result["parcels"], dsm_path)
 
     result["validation"] = validate_parcels(result["parcels"])
+    source_crs = result["parcels"].get("source_crs") if isinstance(result.get("parcels"), dict) else None
+    result["parcels"] = enrich_feature_areas(result["parcels"], source_crs)
+    result["parcels"] = enrich_review_scores(result["parcels"], result["validation"])
     result["analysis_mode"] = extraction_mode
     result["ai_engine"] = ai_info
     result["topology_stats"] = topology_stats
