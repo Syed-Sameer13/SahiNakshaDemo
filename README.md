@@ -4,67 +4,116 @@
 
 SahiNaksha is an SIH prototype for extracting building/road evidence from drone or orthomosaic imagery, refining GIS parcel information, validating geometry, and presenting the result in a WebGIS workflow.
 
-## Advanced prototype pipeline
+## Advanced AI pipeline
 
 ```text
 Orthomosaic / Drone RGB
         ↓
-Tiled HOTOSM / DINOv3 building inference
+HOTOSM / DINOv3 tiled building segmentation
         ↓
-Building candidate masks
+Building candidate polygons
         ↓
-SAM boundary refinement
+Meta Segment Anything (SAM) boundary refinement
         ↓
-Edge-aware polygon cleanup
-        ↓
-GIS parcel/reference refinement (when authoritative GIS is supplied)
+Edge + geometry cleanup
         ↓
 Topology validation
-        ↓
-Land-use / feature attributes
         ↓
 Human review
         ↓
 GeoJSON / WebGIS
 ```
 
-### Model strategy
+### Models actually used
 
-The preferred runtime path is now **HOTOSM/DINOv3 building inference followed by SAM boundary refinement**.
+**1. HOTOSM / DINOv3 building model**
 
-- **HOTOSM/DINOv3**: semantic building-footprint candidate generation using tiled ONNX inference.
-- **SAM**: boundary refinement constrained by the HOTOSM candidate, rather than accepting arbitrary scene masks.
-- **Custom YOLO / pixel models**: retained only as compatibility fallbacks when the advanced pretrained pipeline is unavailable.
+The repository already contains the ONNX inference implementation. It performs overlapping tiled inference, probability aggregation and building-mask extraction.
 
-SAM requires a compatible checkpoint. Configure:
+**2. Meta Segment Anything (SAM)**
 
-```bash
-export SAHINAKSHA_ENABLE_SAM=1
-export SAHINAKSHA_SAM_CHECKPOINT=/absolute/path/to/sam_vit_h_4b8939.pth
-export SAHINAKSHA_SAM_MODEL_TYPE=vit_h
+SAM is used as a boundary-refinement model. HOTOSM proposes the building location; SAM supplies a sharper object boundary, and the refinement is constrained back to the HOTOSM candidate to avoid uncontrolled mask expansion.
+
+The implementation automatically looks for:
+
+```text
+backend/models/sam_vit_b_01ec64.pth
 ```
 
-If SAM is not configured, HOTOSM still runs and the system reports that boundary refinement was skipped.
-
-## Cadastral accuracy rule
-
-A detected building footprint is **not** a legal property boundary. SahiNaksha therefore does not fabricate ownership boundaries from RGB pixels. When an existing cadastral/GIS parcel layer is available, the system can refine and validate it using image evidence. Final cadastral boundaries require authoritative GIS/survey evidence and human verification.
-
-## Current GIS prototype
-
-The WebGIS uses image-local normalized coordinates (0..100) for the prototype. Production deployment should add GeoTIFF CRS handling, DSM/DTM, GNSS/CORS, authoritative cadastral layers and field-survey integration.
-
-## Local setup
+or you can override it:
 
 ```bash
+export SAHINAKSHA_SAM_CHECKPOINT=/absolute/path/to/checkpoint.pth
+export SAHINAKSHA_SAM_MODEL_TYPE=vit_b
+export SAHINAKSHA_ENABLE_SAM=1
+```
+
+Meta publishes the official ViT-B checkpoint from its Segment Anything repository. The project also supports the larger `vit_l` and `vit_h` checkpoint names through the same registry, but ViT-B is the practical local default because it is substantially smaller.
+
+### Download the SAM checkpoint
+
+From the backend directory:
+
+```bash
+python scripts/download_sam_checkpoint.py
+```
+
+Then verify:
+
+```bash
+ls -lh models/sam_vit_b_01ec64.pth
+```
+
+The checkpoint is intentionally not committed to Git because it is a large binary model file.
+
+### Install and run
+
+```bash
+cd ~/Documents/SahiNakshaDemo
+source venv/bin/activate
+
 cd backend
-source ../venv/bin/activate
 pip install -r requirements.txt
+python scripts/download_sam_checkpoint.py
+
+export SAHINAKSHA_ENABLE_SAM=1
 python -m uvicorn app.main:app --reload
 ```
 
-The frontend can then be started from `frontend/` with `npm install && npm run dev`.
+In another terminal:
 
-## Important prototype limitation
+```bash
+cd ~/Documents/SahiNakshaDemo/frontend
+npm install
+npm run dev
+```
 
-Model accuracy depends on the imagery, resolution, model checkpoint, scene type and available ground truth. The system should report model provenance and review status rather than claiming legal or guaranteed cadastral accuracy.
+### Model selection behavior
+
+The runtime order is deliberately:
+
+```text
+HOTOSM / DINOv3
+      ↓
+SAM boundary refinement
+      ↓
+standalone SAM fallback
+      ↓
+custom YOLO compatibility fallback
+      ↓
+trained pixel-model compatibility fallback
+      ↓
+OpenCV fallback
+```
+
+Custom models are therefore **not** the preferred inference path.
+
+## Cadastral accuracy rule
+
+A detected building footprint is not a legal property boundary. RGB imagery alone cannot establish ownership. When authoritative parcel GIS is supplied, SahiNaksha can refine and validate those existing boundaries using image evidence. Final cadastral boundaries require authoritative GIS/survey evidence and human verification.
+
+## Prototype limitations
+
+Accuracy depends on image resolution, orthorectification, scene type, model checkpoint, shadows/vegetation, and available ground truth. The prototype reports model provenance and review status instead of claiming guaranteed cadastral accuracy.
+
+For production GIS, add GeoTIFF CRS handling, DSM/DTM, GNSS/CORS, authoritative cadastral layers and field-survey integration.
