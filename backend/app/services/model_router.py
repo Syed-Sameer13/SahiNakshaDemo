@@ -9,14 +9,28 @@ def run_ai_segmentation(image_path: str):
 
     Project-specific YOLO/pixel models are compatibility fallbacks only.
     """
-    hotosm_result, hotosm_info = run_hotosm_building_segmentation(image_path)
+    try:
+        hotosm_result, hotosm_info = run_hotosm_building_segmentation(image_path)
+    except Exception as exc:
+        hotosm_result, hotosm_info = None, {
+            "provider": "hotosm_dinov3s_buildings",
+            "status": f"inference failed: {exc}",
+        }
 
     if hotosm_result is not None:
         buildings = hotosm_result.get(
             "buildings",
             {"type": "FeatureCollection", "features": []},
         )
-        refined, refinement_info = refine_hotosm_buildings(image_path, buildings)
+        try:
+            refined, refinement_info = refine_hotosm_buildings(image_path, buildings)
+        except Exception as exc:
+            refined, refinement_info = buildings, {
+                "status": "skipped",
+                "reason": f"SAM refinement failed: {exc}",
+                "refined": 0,
+                "strategy": "hotosm_only",
+            }
         hotosm_result["buildings"] = refined
         hotosm_info = {
             **hotosm_info,
