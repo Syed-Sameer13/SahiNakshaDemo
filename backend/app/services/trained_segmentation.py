@@ -95,7 +95,8 @@ def _polygon_features(binary: np.ndarray, image_shape, feature_type: str, prefix
         area = float(cv2.contourArea(contour))
         if area < min_area:
             continue
-        perimeter = cv2.arcLength(contour, True)\n        eps = max(1.0, 0.006 * perimeter)
+        perimeter = cv2.arcLength(contour, True)
+        eps = max(1.0, 0.006 * perimeter)
         approx = cv2.approxPolyDP(contour, eps, True).reshape(-1, 2)
         if len(approx) < 3:
             continue
