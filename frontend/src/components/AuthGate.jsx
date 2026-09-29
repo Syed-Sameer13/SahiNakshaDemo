@@ -31,22 +31,16 @@ function AuthScreen({ onAuthenticated }) {
   }
 
   return (
-    <main className="app-shell">
-      <section className="hero">
-        <div className="badge">SAHINAKSHA • SECURE WORKSPACE</div>
-        <h1>Sahi<span>Naksha</span></h1>
-        <p>{mode === "login" ? "Sign in to continue to the GIS workspace." : "Create an account for the GIS workspace."}</p>
-        <form className="upload-card" onSubmit={submit}>
+    <main className="gov-portal auth-portal"><div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div><div className="gov-tools"><span>Accessibility</span><span>हिन्दी</span><span>English</span><span>A−</span><span>A</span><span>A+</span></div></div><header className="gov-header"><div className="gov-brand"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/120px-Government_of_India_logo.svg.png" alt="Government of India emblem" /><div><div className="gov-hindi">ग्रामीण विकास मंत्रालय</div><div className="gov-title">MINISTRY OF RURAL DEVELOPMENT</div><div className="gov-subtitle">GOVERNMENT OF INDIA</div></div></div><div className="sahinaksha-brand"><strong>SahiNaksha</strong><span>AI-Assisted Cadastral Mapping</span></div></header><div className="gov-notice"><b>Prototype Portal</b> — SIH 2026 demonstration system; not an official Government of India service.</div><section className="auth-card-wrap"><div className="auth-card"><span className="badge">SECURE WORKSPACE</span><h1>Sahi<span>Naksha</span></h1><p>{mode === "login" ? "Sign in to continue to the GIS workspace." : "Create an account for the GIS workspace."}</p>
+        <form className="upload-card auth-form" onSubmit={submit}>
           <label className="file-picker"><span>Email</span><input type="email" value={email} onChange={e=>setEmail(e.target.value)} required /></label>
           <label className="file-picker"><span>Password</span><input type="password" minLength="6" value={password} onChange={e=>setPassword(e.target.value)} required /></label>
           {message && <p className="error">{message}</p>}
           <button className="primary-button" disabled={busy}>{busy ? "Please wait…" : mode === "login" ? "Sign In" : "Create Account"}</button>
-          <button type="button" className="secondary-button" onClick={()=>{setMode(mode==="login"?"signup":"login");setMessage("")}}>
+          <button type="button" className="secondary-button auth-switch" onClick={()=>{setMode(mode==="login"?"signup":"login");setMessage("")}}>
             {mode === "login" ? "Create account" : "Back to sign in"}
           </button>
-        </form>
-      </section>
-    </main>
+        </form><small className="auth-disclaimer">Access is provided only when Supabase authentication is configured for this prototype.</small></div></section><footer className="gov-footer"><div><b>Government of India</b><br/>Ministry of Rural Development • SahiNaksha Demonstration Portal</div><div>Privacy Policy &nbsp;|&nbsp; Accessibility &nbsp;|&nbsp; Contact</div></footer></main>
   );
 }
 
@@ -71,7 +65,7 @@ export default function AuthGate({ children }) {
   }, []);
 
   if (!supabaseConfigured) return children;
-  if (loading) return <main className="app-shell"><section className="hero"><h1>Loading Sahi<span>Naksha</span>…</h1></section></main>;
+  if (loading) return <main className="gov-portal auth-portal"><div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div></div><section className="auth-loading"><div className="service-seal">GIS<br/><small>e-Governance</small></div><h1>Loading Sahi<span>Naksha</span>…</h1><p>Preparing secure workspace.</p></section></main>;
   if (!session) return <AuthScreen onAuthenticated={setSession} />;
 
   return (
