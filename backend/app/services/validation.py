@@ -16,7 +16,7 @@ def validate_parcels(feature_collection):
                 continue
             if geometry.area < 25:
                 noise_count += 1
-                issues.append({"feature_id": feature_id, "type": "noise_candidate", "message": "Feature is too small and should be reviewed."})
+                issues.append({"feature_id": feature_id, "issue_type": "noise_candidate", "severity": "medium", "type": "noise_candidate", "message": "Feature is too small and should be reviewed.", "resolved": False})
             valid_count += 1
             geometries.append((feature_id, geometry))
         except Exception as exc:
@@ -28,6 +28,6 @@ def validate_parcels(feature_collection):
             intersection = left.intersection(right)
             if not intersection.is_empty and intersection.area > 0.001:
                 overlap_count += 1
-                issues.append({"feature_id": f"{left_id} / {right_id}", "type": "overlap", "message": "Parcel candidates overlap and require human review."})
+                issues.append({"feature_id": f"{left_id} / {right_id}", "issue_type": "overlap", "severity": "high", "type": "overlap", "parcel_ids": [left_id, right_id], "message": "Parcel candidates overlap and require human review.", "resolved": False})
 
     return {"valid_count": valid_count, "invalid_count": invalid_count, "overlap_count": overlap_count, "noise_count": noise_count, "issues": issues}
