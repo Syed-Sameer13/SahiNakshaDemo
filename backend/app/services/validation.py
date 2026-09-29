@@ -11,23 +11,26 @@ def validate_parcels(feature_collection):
         try:
             geometry = shape(feature["geometry"])
             if geometry.is_empty or geometry.area <= 0 or not geometry.is_valid:
+                feature.setdefault("properties", {})["geometry_valid"] = False
                 invalid_count += 1
-                issues.append({"feature_id": feature_id, "type": "invalid_geometry", "message": "Parcel geometry is invalid."})
+                issues.append({"feature_id": feature_id, "issue_type": "invalid_geometry", "severity": "high", "type": "invalid_geometry", "message": "Parcel geometry is invalid.", "resolved": False})
                 continue
             if geometry.area < 25:
                 noise_count += 1
-                issues.append({"feature_id": feature_id, "type": "noise_candidate", "message": "Feature is too small and should be reviewed."})
+                issues.append({"feature_id": feature_id, "issue_type": "noise_candidate", "severity": "medium", "type": "noise_candidate", "message": "Feature is too small and should be reviewed.", "resolved": False})
+            feature.setdefault("properties", {})["geometry_valid"] = True
             valid_count += 1
             geometries.append((feature_id, geometry))
         except Exception as exc:
+            feature.setdefault("properties", {})["geometry_valid"] = False
             invalid_count += 1
-            issues.append({"feature_id": feature_id, "type": "parse_error", "message": str(exc)})
+            issues.append({"feature_id": feature_id, "issue_type": "parse_error", "severity": "high", "type": "parse_error", "message": str(exc), "resolved": False})
 
     for i, (left_id, left) in enumerate(geometries):
         for right_id, right in geometries[i + 1:]:
             intersection = left.intersection(right)
             if not intersection.is_empty and intersection.area > 0.001:
                 overlap_count += 1
-                issues.append({"feature_id": f"{left_id} / {right_id}", "type": "overlap", "message": "Parcel candidates overlap and require human review."})
+                issues.append({"feature_id": f"{left_id} / {right_id}", "issue_type": "overlap", "severity": "high", "type": "overlap", "parcel_ids": [left_id, right_id], "message": "Parcel candidates overlap and require human review.", "resolved": False})
 
     return {"valid_count": valid_count, "invalid_count": invalid_count, "overlap_count": overlap_count, "noise_count": noise_count, "issues": issues}

@@ -47,7 +47,7 @@ def repair_and_validate_parcels(parcels):
             props["topology_repaired"] = True if repaired_count else False
             accepted.append({"type": "Feature", "geometry": mapping(part), "properties": props})
 
-    return feature_collection(accepted), {
+    result = feature_collection(accepted)\n    if parcels.get("source_crs"):\n        result["source_crs"] = parcels["source_crs"]\n    return result, {
         "repaired_geometries": repaired_count,
         "overlap_conflicts_resolved": overlap_count,
     }

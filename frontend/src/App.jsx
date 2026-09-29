@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import UploadPanel from "./components/UploadPanel";
 import Dashboard from "./components/Dashboard";
+import AuthGate from "./components/AuthGate";
 
 const HISTORY_KEY = "sahinaksha:analysis-history";
 
@@ -49,7 +50,7 @@ export default function App() {
     setHistory((current) => current.filter((entry) => entry.analysis_id !== analysisId));
   };
 
-  return result ? (
+  const application = result ? (
     <Dashboard result={result} onReset={() => setResult(null)} />
   ) : (
     <UploadPanel
@@ -59,4 +60,6 @@ export default function App() {
       onRemovePrevious={removePrevious}
     />
   );
+
+  return <AuthGate>{application}</AuthGate>;
 }
