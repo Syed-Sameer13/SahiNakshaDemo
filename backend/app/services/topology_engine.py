@@ -45,9 +45,18 @@ def repair_and_validate_parcels(parcels):
         for part in parts:
             props = dict(feature.get("properties", {}))
             props["topology_repaired"] = True if repaired_count else False
-            accepted.append({"type": "Feature", "geometry": mapping(part), "properties": props})
+            accepted.append({
+                "type": "Feature",
+                "geometry": mapping(part),
+                "properties": props,
+            })
 
-    result = feature_collection(accepted)\n    if parcels.get("source_crs"):\n        result["source_crs"] = parcels["source_crs"]\n    return result, {
+    result = feature_collection(accepted)
+
+    if parcels.get("source_crs"):
+        result["source_crs"] = parcels["source_crs"]
+
+    return result, {
         "repaired_geometries": repaired_count,
         "overlap_conflicts_resolved": overlap_count,
     }
