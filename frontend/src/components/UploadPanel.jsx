@@ -19,7 +19,7 @@ export default function UploadPanel({ onComplete, history = [], onOpenPrevious, 
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showPrevious, setShowPrevious] = useState(false);
+  const [showPrevious, setShowPrevious] = useState(false);\n  const [fontScale, setFontScale] = useState(1);\n\n  function jump(id) {\n    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });\n  }
 
   function chooseImage(f) {
     if (!f) return;
@@ -95,10 +95,10 @@ export default function UploadPanel({ onComplete, history = [], onOpenPrevious, 
   }
 
   return (
-    <main className="gov-portal">
-      <div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div><div className="gov-tools"><span>Skip to main content</span><span>हिन्दी</span><span>English</span><span>A−</span><span>A</span><span>A+</span></div></div>
+    <main className="gov-portal" style={{ fontSize: `${fontScale}em` }}>
+      <div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div><div className="gov-tools"><button type="button" onClick={() => jump("main-content")}>Skip to main content</button><button type="button" onClick={() => setFontScale(v => Math.max(.9, v - .05))}>A−</button><button type="button" onClick={() => setFontScale(1)}>A</button><button type="button" onClick={() => setFontScale(v => Math.min(1.15, v + .05))}>A+</button></div></div>
       <header className="gov-header"><div className="gov-brand"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/120px-Government_of_India_logo.svg.png" alt="Government of India emblem" /><div><div className="gov-hindi">ग्रामीण विकास मंत्रालय</div><div className="gov-title">MINISTRY OF RURAL DEVELOPMENT</div><div className="gov-subtitle">GOVERNMENT OF INDIA</div></div></div><div className="header-identity"><img className="ministry-logo" src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Ministry_of_Rural_Development.png/250px-Ministry_of_Rural_Development.png" alt="Ministry of Rural Development logo" /><div className="sahinaksha-brand"><strong>SahiNaksha</strong><span>AI-Assisted Cadastral Mapping</span></div></div></header>
-      <nav className="gov-nav"><span>Home</span><span>About SahiNaksha</span><span>Land &amp; Survey</span><span>GIS Services</span><span>Reports</span><span>Help &amp; Support</span></nav>
+      <nav className="gov-nav"><button type="button" onClick={() => window.scrollTo({top:0,behavior:"smooth"})}>Home</button><button type="button" onClick={() => jump("main-content")}>About SahiNaksha</button><button type="button" onClick={() => jump("upload-service")}>Land &amp; Survey</button><button type="button" onClick={() => jump("upload-service")}>GIS Services</button><button type="button" onClick={() => jump("previous-work")}>Reports</button><button type="button" onClick={() => jump("upload-help")}>Help &amp; Support</button></nav>
       <div className="gov-notice"><b>Prototype Portal</b> — SahiNaksha is an SIH 2026 demonstration system and is not an official Government of India service.</div>
       <section className="hero gov-content" id="main-content">
         <div className="gov-page-title"><span>Digital Land Records &amp; Geospatial Services</span><small>Department of Land Resources • Demonstration Portal</small></div>
@@ -156,7 +156,7 @@ export default function UploadPanel({ onComplete, history = [], onOpenPrevious, 
           </div>
         )}
 
-        <div className="workflow-heading"><span>Online Service</span><h2>Generate Preliminary Cadastral Map</h2><p>Upload the required survey imagery and optional GIS reference layers to begin processing.</p></div>
+        <div id="upload-service" className="workflow-heading"><span>Online Service</span><h2>Generate Preliminary Cadastral Map</h2><p>Upload the required survey imagery and optional GIS reference layers to begin processing.</p></div>
         <div className="upload-card">
           <div className="service-steps"><div><b>01</b><span>Upload imagery</span></div><div><b>02</b><span>Run geospatial analysis</span></div><div><b>03</b><span>Review &amp; validate</span></div></div>
           <p>Minimum input is a high-resolution drone/orthomosaic image. Existing parcel GIS, DSM and ground-truth layers can be added for additional validation.</p>
@@ -193,7 +193,7 @@ export default function UploadPanel({ onComplete, history = [], onOpenPrevious, 
           </button>
         </div>
       </section>
-      <footer className="gov-footer"><div><b>Government of India</b><br/>Ministry of Rural Development • SahiNaksha Demonstration Portal</div><div>Privacy Policy &nbsp;|&nbsp; Terms &nbsp;|&nbsp; Accessibility &nbsp;|&nbsp; Contact</div></footer>
+      <footer id="upload-help" className="gov-footer"><div><b>Government of India</b><br/>Ministry of Rural Development • SahiNaksha Demonstration Portal</div><div>Privacy Policy &nbsp;|&nbsp; Terms &nbsp;|&nbsp; Accessibility &nbsp;|&nbsp; Contact</div></footer>
     </main>
   );
 }
