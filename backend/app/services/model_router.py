@@ -1,53 +1,64 @@
-"""Select the best available SahiNaksha vision model at runtime."""
+"""Select the strongest available advanced vision pipeline at runtime."""
 from .yolo_segmentation import run_yolo_segmentation
 from .trained_segmentation import run_trained_segmentation
 from .hotosm_building_segmentation import run_hotosm_building_segmentation
 from .ai_segmentation import run_ai_segmentation as run_sam_segmentation
+from .sam_refinement import refine_hotosm_buildings
 
 
 def run_ai_segmentation(image_path: str):
-    """Prefer SahiNaksha-trained models, then the generic HOTOSM model, then SAM.
+    """Prefer HOTOSM semantic detection + SAM boundary refinement.
 
-    The custom models must take priority so newly trained project-specific weights
-    are actually used during the demo instead of being hidden behind a generic
-    pretrained model.
+    Custom project-specific models remain a last-resort fallback. This keeps the
+    prototype aligned with the documented advanced pretrained-model strategy.
     """
-    yolo_result, yolo_info = run_yolo_segmentation(image_path)
-    if yolo_result is not None:
-        return yolo_result, yolo_info
-
-    trained_result, trained_info = run_trained_segmentation(image_path)
-    if trained_result is not None:
-        trained_info = {
-            **trained_info,
-            "fallback_after_yolo": yolo_info["status"],
-        }
-        return trained_result, trained_info
-
     hotosm_result, hotosm_info = run_hotosm_building_segmentation(image_path)
     if hotosm_result is not None:
-        hotosm_info = {
+        buildings = hotosm_result.get("buildings", {"type": "FeatureCollection", "features": []})
+        refined_buildings, refinement_info = refine_hotosm_buildings(image_path, buildings)
+        hotosm_result["buildings"] = refined_buildings
+        return hotosm_result, {
             **hotosm_info,
-            "fallback_after_yolo": yolo_info["status"],
-            "fallback_after_trained_model": trained_info["status"],
+            "provider": "hotosm_dinov3s_buildings",
+            "boundary_refinement": refinement_info,
+            "strategy": refinement_info.get(
+                "strategy",
+                "hotosm_candidate_plus_sam_boundary_refinement",
+            ),
         }
-        return hotosm_result, hotosm_info
 
     sam_result, sam_info = run_sam_segmentation(image_path)
     if sam_result is not None:
-        sam_info = {
+        return sam_result, {
             **sam_info,
-            "fallback_after_yolo": yolo_info["status"],
-            "fallback_after_trained_model": trained_info["status"],
-            "fallback_after_hotosm": hotosm_info["status"],
+            "fallback_after_hotosm": hotosm_info.get("status"),
+            "strategy": "standalone_sam_fallback",
         }
-        return sam_result, sam_info
+
+    yolo_result, yolo_info = run_yolo_segmentation(image_path)
+    if yolo_result is not None:
+        return yolo_result, {
+            **yolo_info,
+            "fallback_after_hotosm": hotosm_info.get("status"),
+            "fallback_after_sam": sam_info.get("status"),
+            "strategy": "custom_yolo_fallback",
+        }
+
+    trained_result, trained_info = run_trained_segmentation(image_path)
+    if trained_result is not None:
+        return trained_result, {
+            **trained_info,
+            "fallback_after_hotosm": hotosm_info.get("status"),
+            "fallback_after_sam": sam_info.get("status"),
+            "fallback_after_yolo": yolo_info.get("status"),
+            "strategy": "trained_pixel_model_fallback",
+        }
 
     return None, {
         "provider": "none",
-        "status": "Custom YOLO, trained pixel model, HOTOSM building model and SAM unavailable",
-        "yolo": yolo_info["status"],
-        "trained_model": trained_info["status"],
-        "hotosm": hotosm_info["status"],
-        "sam": sam_info["status"],
+        "status": "HOTOSM, SAM, custom YOLO and trained pixel model unavailable",
+        "hotosm": hotosm_info.get("status"),
+        "sam": sam_info.get("status"),
+        "yolo": yolo_info.get("status"),
+        "trained_model": trained_info.get("status"),
     }
