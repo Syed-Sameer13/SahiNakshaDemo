@@ -4,16 +4,20 @@
 
 SahiNaksha is an SIH prototype for extracting building/road evidence from drone or orthomosaic imagery, refining GIS parcel information, validating geometry, and presenting the result in a WebGIS workflow.
 
-## Prototype pipeline
+## Advanced prototype pipeline
 
 ```text
 Orthomosaic / Drone RGB
         ↓
-Custom YOLO segmentation (if trained)
+Tiled HOTOSM / DINOv3 building inference
         ↓
-Building + road polygons
+Building candidate masks
         ↓
-GIS parcel/reference refinement
+SAM boundary refinement
+        ↓
+Edge-aware polygon cleanup
+        ↓
+GIS parcel/reference refinement (when authoritative GIS is supplied)
         ↓
 Topology validation
         ↓
@@ -24,36 +28,23 @@ Human review
 GeoJSON / WebGIS
 ```
 
-## AI model strategy
+### Model strategy
 
-The repository now includes a fast custom YOLO segmentation training path. Ultralytics segmentation models output object masks, polygons and confidence scores, making them suitable for the building/road feature-extraction stage. For a small SIH prototype, fine-tuning a pretrained model is preferred over training from scratch.
+The preferred runtime path is now **HOTOSM/DINOv3 building inference followed by SAM boundary refinement**.
 
-The runtime model order is:
+- **HOTOSM/DINOv3**: semantic building-footprint candidate generation using tiled ONNX inference.
+- **SAM**: boundary refinement constrained by the HOTOSM candidate, rather than accepting arbitrary scene masks.
+- **Custom YOLO / pixel models**: retained only as compatibility fallbacks when the advanced pretrained pipeline is unavailable.
 
-1. `backend/models/sahinaksha_seg.pt` — custom YOLO model trained for this demo
-2. `backend/models/sahinaksha_pixel_model.joblib` — CPU-friendly fallback
-3. SAM — optional segmentation fallback
-
-## 10-image demo training
-
-Read [`training/10_IMAGE_DEMO_PROTOCOL.md`](training/10_IMAGE_DEMO_PROTOCOL.md).
-
-The critical requirement is **labels**. Ten raw images cannot by themselves teach a model what a building or road is. Use 8 complete labelled scenes for training and hold out 2 complete scenes for validation/demo. With 20 scenes, use 16/4.
-
-Train:
+SAM requires a compatible checkpoint. Configure:
 
 ```bash
-pip install -r training/requirements-yolo.txt
-python training/quick_train_yolo.py --dataset training/dataset --epochs 60 --imgsz 768 --batch 4 --device 0
+export SAHINAKSHA_ENABLE_SAM=1
+export SAHINAKSHA_SAM_CHECKPOINT=/absolute/path/to/sam_vit_h_4b8939.pth
+export SAHINAKSHA_SAM_MODEL_TYPE=vit_h
 ```
 
-Then copy the resulting `best.pt` to:
-
-```text
-backend/models/sahinaksha_seg.pt
-```
-
-For CPU-only training use `--device cpu`, but GPU is strongly preferred for today's deadline.
+If SAM is not configured, HOTOSM still runs and the system reports that boundary refinement was skipped.
 
 ## Cadastral accuracy rule
 
@@ -65,4 +56,15 @@ The WebGIS uses image-local normalized coordinates (0..100) for the prototype. P
 
 ## Local setup
 
-See [`SETUP.md`](SETUP.md) and [`AI_SETUP.md`](AI_SETUP.md).
+```bash
+cd backend
+source ../venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn app.main:app --reload
+```
+
+The frontend can then be started from `frontend/` with `npm install && npm run dev`.
+
+## Important prototype limitation
+
+Model accuracy depends on the imagery, resolution, model checkpoint, scene type and available ground truth. The system should report model provenance and review status rather than claiming legal or guaranteed cadastral accuracy.
