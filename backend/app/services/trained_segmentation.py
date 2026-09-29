@@ -95,7 +95,7 @@ def _polygon_features(binary: np.ndarray, image_shape, feature_type: str, prefix
         area = float(cv2.contourArea(contour))
         if area < min_area:
             continue
-        eps = max(1.0, 0.008 * cv2.arcLength(contour, True))
+        perimeter = cv2.arcLength(contour, True)\n        eps = max(1.0, 0.006 * perimeter)
         approx = cv2.approxPolyDP(contour, eps, True).reshape(-1, 2)
         if len(approx) < 3:
             continue
@@ -108,7 +108,7 @@ def _polygon_features(binary: np.ndarray, image_shape, feature_type: str, prefix
         props = {
             f"{prefix}_id": f"{prefix[0].upper()}-{len(features)+1:03d}",
             "feature_type": feature_type,
-            "confidence": 0.75,
+            "confidence": 0.80,
             "pixel_area": round(area, 1),
             "review_required": True,
             "model_provider": "sahinaksha_trained_pixel_model",
