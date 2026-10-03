@@ -8,6 +8,11 @@ from .area_metrics import enrich_feature_areas
 from .review_score import enrich_review_scores
 from .cadastral_engine import (
     load_reference_parcels,
+    generate_candidate_parcels,
+    compare_to_references,
+    enrich_cadastral_metrics,
+    enrich_review_priority,
+    extract_raster_metadata,
     classify_parcel_landuse,
     classify_parcel_height,
 )
@@ -19,6 +24,7 @@ def analyze_image(
     ground_truth_path: str | None = None,
     dsm_path: str | None = None,
 ):
+    raster_metadata = extract_raster_metadata(image_path)
     ai_result, ai_info = run_ai_segmentation(image_path)
 
     if ai_result is not None:
@@ -29,18 +35,17 @@ def analyze_image(
         result = extract_features(image_path)
         extraction_mode = "opencv_fallback"
 
+    reference_result = None
     if reference_parcels_path:
-        parcels = load_reference_parcels(reference_parcels_path, image_path)
-        result["parcels"] = parcels
-        result["cadastral_mode"] = "drone_refined_existing_gis"
+        reference_result = load_reference_parcels(reference_parcels_path, image_path)
+        result["reference_parcels"] = reference_result
+
+    result["parcels"] = generate_candidate_parcels(result, reference_result)
+    if reference_result and reference_result.get("features"):
+        result["parcels"] = compare_to_references(result["parcels"], reference_result)
+        result["cadastral_mode"] = "reference_gis_plus_ai_evidence"
     else:
-        # RGB imagery alone cannot reveal authoritative ownership boundaries.
-        # The current AI path may provide preliminary road-separated land blocks
-        # for a prototype visualization, but these are explicitly non-legal.
-        result["cadastral_mode"] = ai_info.get(
-            "parcel_mode",
-            "feature_evidence_only" if ai_result is None else "preliminary_feature_extraction",
-        )
+        result["cadastral_mode"] = "preliminary_ai_evidence_candidates"
 
     result.setdefault("parcels", {"type": "FeatureCollection", "features": []})
     result["parcels"], topology_stats = repair_and_validate_parcels(result["parcels"])
@@ -52,7 +57,10 @@ def analyze_image(
     result["validation"] = validate_parcels(result["parcels"])
     source_crs = result["parcels"].get("source_crs") if isinstance(result.get("parcels"), dict) else None
     result["parcels"] = enrich_feature_areas(result["parcels"], source_crs)
+    result["parcels"] = enrich_cadastral_metrics(result["parcels"], result["parcels"].get("source_crs") or raster_metadata.get("crs"))
+    result["parcels"] = enrich_review_priority(result["parcels"])
     result["parcels"] = enrich_review_scores(result["parcels"], result["validation"])
+    result["raster_metadata"] = raster_metadata
     result["analysis_mode"] = extraction_mode
     result["ai_engine"] = ai_info
     result["ai_status"] = ai_info.get("status", "FAILED")
