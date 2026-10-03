@@ -41,6 +41,7 @@ def analyze_image(
             "feature_evidence_only" if ai_result is None else "preliminary_feature_extraction",
         )
 
+    result.setdefault("parcels", {"type": "FeatureCollection", "features": []})
     result["parcels"], topology_stats = repair_and_validate_parcels(result["parcels"])
     result["parcels"] = classify_parcel_landuse(result["parcels"], image_path)
 
