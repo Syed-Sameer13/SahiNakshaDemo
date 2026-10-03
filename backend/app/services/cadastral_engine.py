@@ -238,11 +238,28 @@ def generate_candidate_parcels(ai_result: dict[str, Any], reference_parcels: dic
         candidates = []
         for f in reference_parcels["features"]:
             props = dict(f.get("properties") or {})
+            geom = shape(f["geometry"])
+            buildings = (ai_result.get("buildings") or {}).get("features", [])
+            evidence_area = 0.0
+            evidence_count = 0
+            for building in buildings:
+                try:
+                    bg = shape(building["geometry"])
+                    inter = geom.intersection(bg)
+                    if not inter.is_empty and inter.area > 0:
+                        evidence_area += inter.area
+                        evidence_count += 1
+                except Exception:
+                    continue
             props.update({
                 "source": "reference_gis_plus_ai_evidence",
                 "reference_available": True,
                 "candidate_type": "reference_based_candidate",
+                "ai_evidence": "building_footprints",
+                "ai_evidence_feature_count": evidence_count,
+                "ai_evidence_overlap_area": evidence_area,
                 "review_required": True,
+                "legal_cadastral_boundary": False,
             })
             candidates.append({"type": "Feature", "geometry": f["geometry"], "properties": props})
         result = feature_collection(candidates)
