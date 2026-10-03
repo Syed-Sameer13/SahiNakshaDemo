@@ -67,7 +67,6 @@ def _predict(model, image: np.ndarray) -> np.ndarray:
     h, w = image.shape[:2]
     f = _features(image).reshape(-1, 15)
     pred = np.empty((f.shape[0],), dtype=np.uint8)
-    # Small batches prevent high RAM usage on large orthomosaics.
     for start in range(0, len(f), 50000):
         pred[start:start + 50000] = model.predict(f[start:start + 50000]).astype(np.uint8)
     return pred.reshape(h, w)
@@ -91,18 +90,19 @@ def _polygon_features(binary: np.ndarray, image_shape, feature_type: str, prefix
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     contours = sorted(contours, key=cv2.contourArea, reverse=True)
     features = []
-    for idx, contour in enumerate(contours[:max_items], 1):
+    for contour in contours[:max_items]:
         area = float(cv2.contourArea(contour))
         if area < min_area:
             continue
-        perimeter = cv2.arcLength(contour, True)\n        eps = max(1.0, 0.006 * perimeter)
+        perimeter = cv2.arcLength(contour, True)
+        eps = max(1.0, 0.006 * perimeter)
         approx = cv2.approxPolyDP(contour, eps, True).reshape(-1, 2)
         if len(approx) < 3:
             continue
-        coords = [[
-            round(float(x) * 100.0 / w, 3),
-            round(100.0 - float(y) * 100.0 / h, 3),
-        ] for x, y in approx]
+        coords = [
+            [round(float(x) * 100.0 / w, 3), round(100.0 - float(y) * 100.0 / h, 3)]
+            for x, y in approx
+        ]
         if coords[0] != coords[-1]:
             coords.append(coords[0])
         props = {
@@ -143,7 +143,6 @@ def run_trained_segmentation(image_path: str):
     return {
         "buildings": buildings,
         "roads": roads,
-        # Legal parcel boundaries are deliberately not inferred from RGB.
         "parcels": feature_collection([]),
     }, {
         "provider": "sahinaksha_trained_pixel_model",
