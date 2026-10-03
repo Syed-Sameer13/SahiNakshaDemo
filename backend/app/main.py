@@ -9,6 +9,8 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 UPLOADS_DIR = BASE_DIR / "uploads"
 OUTPUTS_DIR = BASE_DIR / "outputs"
 MODEL_PATH = Path(os.getenv("SAHINAKSHA_PIXEL_MODEL_PATH", str(BASE_DIR / "models" / "sahinaksha_pixel_model.joblib")))
+HOTOSM_MODEL_PATH = Path(os.getenv("SAHINAKSHA_HOTOSM_MODEL", str(BASE_DIR / "models" / "hotosm_dinov3s_buildings.onnx")))
+YOLO_MODEL_PATH = Path(os.getenv("SAHINAKSHA_YOLO_MODEL", str(BASE_DIR / "models" / "sahinaksha_seg.pt")))
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -44,9 +46,9 @@ def health():
         "service": "SahiNaksha API",
         "ai_models": {
             "trained_pixel_model": MODEL_PATH.exists() and MODEL_PATH.stat().st_size >= 128,
-            "hotosm_configured": bool(os.getenv("SAHINAKSHA_HOTOSM_MODEL")),
+            "hotosm_configured": HOTOSM_MODEL_PATH.exists(),
             "sam_configured": os.getenv("SAHINAKSHA_ENABLE_SAM", "0") == "1" and bool(os.getenv("SAHINAKSHA_SAM_CHECKPOINT")),
-            "custom_yolo_configured": bool(os.getenv("SAHINAKSHA_YOLO_MODEL")),
+            "custom_yolo_configured": YOLO_MODEL_PATH.exists(),
         },
         "trained_model": {
             "available": MODEL_PATH.exists() and MODEL_PATH.stat().st_size >= 128,
