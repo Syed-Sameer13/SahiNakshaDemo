@@ -54,6 +54,14 @@ def analyze_image(
     result["parcels"] = enrich_review_scores(result["parcels"], result["validation"])
     result["analysis_mode"] = extraction_mode
     result["ai_engine"] = ai_info
+    result["ai_status"] = ai_info.get("status", "FAILED")
+    result["model_metadata"] = {
+        "model_name": ai_info.get("model_name", ai_info.get("provider", "unknown")),
+        "model_version": ai_info.get("model_version", "unknown"),
+        "processing_timestamp": ai_info.get("processing_timestamp"),
+        "processing_status": ai_info.get("processing_status", ai_info.get("status", "FAILED")),
+        "input_image": image_path,
+    }
     result["topology_stats"] = topology_stats
 
     if ground_truth_path:
