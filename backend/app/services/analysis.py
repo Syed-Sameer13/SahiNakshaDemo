@@ -1,3 +1,4 @@
+from pathlib import Path
 from .opencv_analysis import extract_features
 from .model_router import run_ai_segmentation
 from .validation import validate_parcels
@@ -60,7 +61,7 @@ def analyze_image(
         "model_version": ai_info.get("model_version", "unknown"),
         "processing_timestamp": ai_info.get("processing_timestamp"),
         "processing_status": ai_info.get("processing_status", ai_info.get("status", "FAILED")),
-        "input_image": image_path,
+        "input_image": Path(image_path).name,
     }
     result["topology_stats"] = topology_stats
 
