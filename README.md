@@ -4,65 +4,116 @@
 
 SahiNaksha is an SIH prototype for extracting building/road evidence from drone or orthomosaic imagery, refining GIS parcel information, validating geometry, and presenting the result in a WebGIS workflow.
 
-## Prototype pipeline
+## Advanced AI pipeline
 
 ```text
 Orthomosaic / Drone RGB
         ↓
-Custom YOLO segmentation (if trained)
+HOTOSM / DINOv3 tiled building segmentation
         ↓
-Building + road polygons
+Building candidate polygons
         ↓
-GIS parcel/reference refinement
+Meta Segment Anything (SAM) boundary refinement
+        ↓
+Edge + geometry cleanup
         ↓
 Topology validation
-        ↓
-Land-use / feature attributes
         ↓
 Human review
         ↓
 GeoJSON / WebGIS
 ```
 
-## AI model strategy
+### Models actually used
 
-The repository now includes a fast custom YOLO segmentation training path. Ultralytics segmentation models output object masks, polygons and confidence scores, making them suitable for the building/road feature-extraction stage. For a small SIH prototype, fine-tuning a pretrained model is preferred over training from scratch.
+**1. HOTOSM / DINOv3 building model**
 
-The runtime model order is:
+The repository already contains the ONNX inference implementation. It performs overlapping tiled inference, probability aggregation and building-mask extraction.
 
-1. `backend/models/sahinaksha_seg.pt` — custom YOLO model trained for this demo
-2. `backend/models/sahinaksha_pixel_model.joblib` — CPU-friendly fallback
-3. SAM — optional segmentation fallback
+**2. Meta Segment Anything (SAM)**
 
-## 10-image demo training
+SAM is used as a boundary-refinement model. HOTOSM proposes the building location; SAM supplies a sharper object boundary, and the refinement is constrained back to the HOTOSM candidate to avoid uncontrolled mask expansion.
 
-Read [`training/10_IMAGE_DEMO_PROTOCOL.md`](training/10_IMAGE_DEMO_PROTOCOL.md).
-
-The critical requirement is **labels**. Ten raw images cannot by themselves teach a model what a building or road is. Use 8 complete labelled scenes for training and hold out 2 complete scenes for validation/demo. With 20 scenes, use 16/4.
-
-Train:
-
-```bash
-pip install -r training/requirements-yolo.txt
-python training/quick_train_yolo.py --dataset training/dataset --epochs 60 --imgsz 768 --batch 4 --device 0
-```
-
-Then copy the resulting `best.pt` to:
+The implementation automatically looks for:
 
 ```text
-backend/models/sahinaksha_seg.pt
+backend/models/sam_vit_b_01ec64.pth
 ```
 
-For CPU-only training use `--device cpu`, but GPU is strongly preferred for today's deadline.
+or you can override it:
+
+```bash
+export SAHINAKSHA_SAM_CHECKPOINT=/absolute/path/to/checkpoint.pth
+export SAHINAKSHA_SAM_MODEL_TYPE=vit_b
+export SAHINAKSHA_ENABLE_SAM=1
+```
+
+Meta publishes the official ViT-B checkpoint from its Segment Anything repository. The project also supports the larger `vit_l` and `vit_h` checkpoint names through the same registry, but ViT-B is the practical local default because it is substantially smaller.
+
+### Download the SAM checkpoint
+
+From the backend directory:
+
+```bash
+python scripts/download_sam_checkpoint.py
+```
+
+Then verify:
+
+```bash
+ls -lh models/sam_vit_b_01ec64.pth
+```
+
+The checkpoint is intentionally not committed to Git because it is a large binary model file.
+
+### Install and run
+
+```bash
+cd ~/Documents/SahiNakshaDemo
+source venv/bin/activate
+
+cd backend
+pip install -r requirements.txt
+python scripts/download_sam_checkpoint.py
+
+export SAHINAKSHA_ENABLE_SAM=1
+python -m uvicorn app.main:app --reload
+```
+
+In another terminal:
+
+```bash
+cd ~/Documents/SahiNakshaDemo/frontend
+npm install
+npm run dev
+```
+
+### Model selection behavior
+
+The runtime order is deliberately:
+
+```text
+HOTOSM / DINOv3
+      ↓
+SAM boundary refinement
+      ↓
+standalone SAM fallback
+      ↓
+custom YOLO compatibility fallback
+      ↓
+trained pixel-model compatibility fallback
+      ↓
+OpenCV fallback
+```
+
+Custom models are therefore **not** the preferred inference path.
 
 ## Cadastral accuracy rule
 
-A detected building footprint is **not** a legal property boundary. SahiNaksha therefore does not fabricate ownership boundaries from RGB pixels. When an existing cadastral/GIS parcel layer is available, the system can refine and validate it using image evidence. Final cadastral boundaries require authoritative GIS/survey evidence and human verification.
+A detected building footprint is not a legal property boundary. RGB imagery alone cannot establish ownership. When authoritative parcel GIS is supplied, SahiNaksha can refine and validate those existing boundaries using image evidence. Final cadastral boundaries require authoritative GIS/survey evidence and human verification.
 
-## Current GIS prototype
+## Prototype limitations
 
-The WebGIS uses image-local normalized coordinates (0..100) for the prototype. Production deployment should add GeoTIFF CRS handling, DSM/DTM, GNSS/CORS, authoritative cadastral layers and field-survey integration.
+Accuracy depends on image resolution, orthorectification, scene type, model checkpoint, shadows/vegetation, and available ground truth. The prototype reports model provenance and review status instead of claiming guaranteed cadastral accuracy.
 
-## Local setup
-
-See [`SETUP.md`](SETUP.md) and [`AI_SETUP.md`](AI_SETUP.md).
+For production GIS, add GeoTIFF CRS handling, DSM/DTM, GNSS/CORS, authoritative cadastral layers and field-survey integration.
