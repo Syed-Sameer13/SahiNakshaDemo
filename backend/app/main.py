@@ -42,8 +42,14 @@ def health():
     return {
         "status": "ok",
         "service": "SahiNaksha API",
+        "ai_models": {
+            "trained_pixel_model": MODEL_PATH.exists() and MODEL_PATH.stat().st_size >= 128,
+            "hotosm_configured": bool(os.getenv("SAHINAKSHA_HOTOSM_MODEL")),
+            "sam_configured": os.getenv("SAHINAKSHA_ENABLE_SAM", "0") == "1" and bool(os.getenv("SAHINAKSHA_SAM_CHECKPOINT")),
+            "custom_yolo_configured": bool(os.getenv("SAHINAKSHA_YOLO_MODEL")),
+        },
         "trained_model": {
-            "available": MODEL_PATH.exists(),
+            "available": MODEL_PATH.exists() and MODEL_PATH.stat().st_size >= 128,
             "path": MODEL_PATH.name,
         },
     }
