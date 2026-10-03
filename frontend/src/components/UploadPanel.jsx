@@ -19,7 +19,12 @@ export default function UploadPanel({ onComplete, history = [], onOpenPrevious, 
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showPrevious, setShowPrevious] = useState(false);\n  const [fontScale, setFontScale] = useState(1);\n\n  function jump(id) {\n    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });\n  }
+  const [showPrevious, setShowPrevious] = useState(false);
+  const [fontScale, setFontScale] = useState(1);
+
+  function jump(id) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   function chooseImage(f) {
     if (!f) return;
