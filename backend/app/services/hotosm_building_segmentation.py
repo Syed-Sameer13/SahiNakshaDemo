@@ -27,7 +27,7 @@ def model_path() -> Path:
 def _session():
     global _SESSION, _SESSION_PATH
     path = model_path()
-    if not path.exists() or path.stat().st_size < 100_000_000:
+    if not path.exists():
         return None, f"HOTOSM model missing: {path}"
     if _SESSION is not None and _SESSION_PATH == str(path):
         return _SESSION, "ready"
@@ -37,8 +37,10 @@ def _session():
         if "CUDAExecutionProvider" in ort.get_available_providers():
             providers.insert(0, "CUDAExecutionProvider")
         _SESSION = ort.InferenceSession(str(path), providers=providers)
+        if not _SESSION.get_inputs():
+            raise RuntimeError("HOTOSM ONNX model exposes no inputs")
         _SESSION_PATH = str(path)
-        return _SESSION, "ready"
+        return _SESSION, "MODEL_AVAILABLE"
     except Exception as exc:
         return None, f"HOTOSM model unavailable: {exc}"
 
