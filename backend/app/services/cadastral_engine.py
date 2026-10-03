@@ -93,16 +93,19 @@ def pixel_to_map(x: float, y: float, metadata: dict[str, Any]) -> tuple[float, f
     t = metadata.get("transform")
     if not t:
         raise ValueError("Raster transform is unavailable; pixel-to-map conversion is not possible.")
-    from affine import Affine
-    return tuple(Affine(*t) * (x, y))
+    a, b, cc, d, e, f = t
+    return (a * x + b * y + cc, d * x + e * y + f)
 
 
 def map_to_pixel(x: float, y: float, metadata: dict[str, Any]) -> tuple[float, float]:
     t = metadata.get("transform")
     if not t:
         raise ValueError("Raster transform is unavailable; map-to-pixel conversion is not possible.")
-    from affine import Affine
-    return tuple(~Affine(*t) * (x, y))
+    a, b, cc, d, e, f = t
+    matrix = np.array([[a, b], [d, e]], dtype=float)
+    offset = np.array([cc, f], dtype=float)
+    px, py = np.linalg.solve(matrix, np.array([x, y], dtype=float) - offset)
+    return float(px), float(py)
 
 
 def pixel_polygon_to_map(feature: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
