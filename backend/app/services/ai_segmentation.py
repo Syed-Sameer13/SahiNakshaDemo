@@ -149,6 +149,8 @@ def _candidate_from_mask(image, item, vegetation):
         "polygon": polygon,
         "bbox": (x, y, x + bw, y + bh),
         "score": float(score),
+        "predicted_iou": float(item.get("predicted_iou")) if item.get("predicted_iou") is not None else None,
+        "stability_score": float(item.get("stability_score")) if item.get("stability_score") is not None else None,
         "area": float(contour_area),
         "metrics": {
             "vegetation_ratio": round(float(vegetation_ratio), 2),
@@ -245,7 +247,8 @@ def _buildings_from_candidates(candidates):
         props = {
             "building_id": f"B-{index:03d}",
             "feature_type": "building_footprint",
-            "confidence": round(min(0.97, max(0.50, c["score"])), 2),
+            "confidence": round(float(c["predicted_iou"]), 4) if c.get("predicted_iou") is not None else None,
+            "confidence_available": c.get("predicted_iou") is not None,
             "pixel_area": round(c["area"], 1),
             "review_required": True,
             **c["metrics"],
@@ -287,7 +290,8 @@ def _extract_roads(image, vegetation):
             "properties": {
                 "road_id": f"R-{len(features)+1:03d}",
                 "feature_type": "road_evidence",
-                "confidence": round(min(0.85, 0.45 + length / max(width, height)), 2),
+                "confidence": None,
+                "confidence_available": False,
                 "review_required": True,
             },
         })
