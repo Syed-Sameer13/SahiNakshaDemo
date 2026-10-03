@@ -107,10 +107,27 @@ def _polygon_features(mask: np.ndarray, width: int, height: int, prefix: str, fe
     return feature_collection(features)
 
 
-def _building_geojson(mask: np.ndarray, width: int, height: int):
+def _building_geojson(mask: np.ndarray, width: int, height: int, probability: np.ndarray | None = None):
     fc = _polygon_features(mask, width, height, "building", "building_footprint", min_area=150)
     for f in fc["features"]:
-        f["properties"].update({"confidence": "model_thresholded", "source_model": "hotosm/dinov3s-buildings"})
+        props = f["properties"]
+        props.update({"source_model": "hotosm/dinov3s-buildings", "confidence_available": False})
+        if probability is not None:
+            try:
+                from shapely.geometry import shape
+                geom = shape(f["geometry"])
+                # Convert normalized 0..100 polygon back to pixel bounds for a conservative mean.
+                coords = np.array(f["geometry"]["coordinates"][0], dtype=np.float32)
+                xs = np.clip((coords[:, 0] * width / 100.0).astype(int), 0, width - 1)
+                ys = np.clip(((100.0 - coords[:, 1]) * height / 100.0).astype(int), 0, height - 1)
+                x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+                local = probability[y0:y1 + 1, x0:x1 + 1]
+                valid = local[local >= 0]
+                if valid.size:
+                    props["confidence"] = round(float(np.mean(valid)), 4)
+                    props["confidence_available"] = True
+            except Exception:
+                pass
     return fc
 
 
@@ -199,13 +216,13 @@ def run_hotosm_building_segmentation(image_path: str):
         weights[y:y + actual_h, x:x + actual_w] += 1.0
     probability /= np.maximum(weights, 1.0)
     building_mask = probability >= threshold
-    buildings = _building_geojson(building_mask, width, height)
+    buildings = _building_geojson(building_mask, width, height, probability)
     roads_mask = _road_mask(image, building_mask)
     roads = _road_geojson(roads_mask, width, height)
     parcels = _preliminary_blocks(roads_mask, building_mask, width, height)
     return {"buildings": buildings, "roads": roads, "parcels": parcels}, {
-        "provider": "hotosm_dinov3s_buildings", "status": "ready", "threshold": threshold,
+        "provider": "hotosm_dinov3s_buildings", "status": "MODEL_AVAILABLE", "threshold": threshold,
         "stride": stride, "windows": len(windows), "accepted_buildings": len(buildings["features"]),
         "accepted_roads": len(roads["features"]), "preliminary_parcel_blocks": len(parcels["features"]),
-        "parcel_mode": "preliminary_blocks_not_legal_cadastre", "model": str(model_path()),
+        "parcel_mode": "preliminary_blocks_not_legal_cadastre", "model": str(model_path()), "confidence_available": any(f.get("properties", {}).get("confidence_available") for f in buildings["features"]),
     }
