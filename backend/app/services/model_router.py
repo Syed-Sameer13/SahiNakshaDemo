@@ -22,11 +22,11 @@ def _safe_call(name: str, fn, image_path: str):
         result, info = fn(image_path)
         info = dict(info or {})
         if result is not None:
-            info.setdefault("status", "MODEL_AVAILABLE")
+            info["status"] = "MODEL_AVAILABLE"
             logger.info("AI stage=%s status=%s", name, info.get("status"))
         else:
-            info.setdefault("status", "MODEL_UNAVAILABLE")
-            logger.warning("AI stage=%s unavailable: %s", name, info.get("status"))
+            info["status"] = "MODEL_UNAVAILABLE"
+            logger.warning("AI stage=%s unavailable: %s", name, info.get("reason") or info.get("status"))
         return result, info
     except Exception as exc:
         logger.exception("AI stage=%s crashed", name)
