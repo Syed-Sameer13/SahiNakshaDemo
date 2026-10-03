@@ -14,7 +14,7 @@ from typing import Any
 import cv2
 import numpy as np
 from shapely.geometry import box, mapping, shape
-from shapely.ops import transform as shapely_transform
+from shapely.ops import transform as shapely_transform, unary_union
 from pyproj import CRS, Transformer
 
 from .geojson_service import feature_collection
@@ -273,7 +273,7 @@ def generate_candidate_parcels(ai_result: dict[str, Any], reference_parcels: dic
             if other_geom and geom.distance(other_geom) <= 8.0:
                 group.append(other_geom)
                 used.add(j)
-        block = _repair_geometry(shape(__import__("shapely").ops.unary_union(group)).convex_hull)
+        block = _repair_geometry(unary_union(group).convex_hull)
         if block is None:
             continue
         candidates.append({
