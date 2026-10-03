@@ -171,7 +171,9 @@ def _extract_buildings(image):
                 points,
                 {
                     "building_id": building_id,
-                    "confidence": confidence,
+                    "boundary_evidence": confidence,
+                    "confidence": None,
+                    "confidence_available": False,
                     "pixel_area": round(candidate["area"], 1),
                     "solidity": round(candidate["solidity"], 2),
                     "rectangularity": round(candidate["rectangularity"], 2),
@@ -237,7 +239,9 @@ def _extract_roads(image, edges, vegetation, buildings):
                 [_scale((x1, y1), width, height), _scale((x2, y2), width, height)],
                 {
                     "road_id": road_id,
-                    "confidence": 0.70,
+                    "boundary_evidence": 0.70,
+                    "confidence": None,
+                    "confidence_available": False,
                     "extraction_method": "strict_conservative_hough",
                 },
             )
