@@ -40,11 +40,21 @@ def run_yolo_segmentation(image_path: str):
     h, w = image.shape[:2]
     conf = float(os.getenv("SAHINAKSHA_YOLO_CONF", "0.25"))
     imgsz = int(os.getenv("SAHINAKSHA_YOLO_IMGSZ", "1024"))
-    device = os.getenv("SAHINAKSHA_YOLO_DEVICE", "0")
+    device = os.getenv("SAHINAKSHA_YOLO_DEVICE", "cpu")
+    if device == "0":
+        device = "0"
 
     try:
         model = YOLO(str(path))
-        result = model.predict(\n            source=image,\n            conf=conf,\n            imgsz=imgsz,\n            device=device,\n            retina_masks=True,\n            augment=True,\n            verbose=False,\n        )[0]
+        result = model.predict(
+            source=image,
+            conf=conf,
+            imgsz=imgsz,
+            device=device,
+            retina_masks=True,
+            augment=True,
+            verbose=False,
+        )[0]
     except Exception as exc:
         return None, {"provider": "custom_yolo", "status": f"inference failed: {exc}"}
 
@@ -67,7 +77,8 @@ def run_yolo_segmentation(image_path: str):
                     "feature_type": feature_type,
                     "confidence": round(float(score), 4),
                     "model_provider": "sahinaksha_custom_yolo",
-                    "review_required": float(score) < 0.65,\n                    "boundary_quality": "high" if float(score) >= 0.75 else "review",
+                    "review_required": float(score) < 0.65,
+                    "boundary_quality": "high" if float(score) >= 0.75 else "review",
                 },
             }
             (buildings if feature_type == "building_footprint" else roads).append(feature)
