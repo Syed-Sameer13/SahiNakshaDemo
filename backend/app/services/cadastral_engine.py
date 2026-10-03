@@ -198,8 +198,7 @@ def load_reference_parcels(reference_path: str, image_path: str):
             elif source_crs and raster_crs:
                 geom = _reproject_geometry(geom, source_crs, raster_crs)
             elif source_crs and not raster_crs:
-                # We can load and report the reference, but cannot honestly align it to an ungeoreferenced image.
-                pass
+                raise ValueError("Reference GeoJSON has a CRS but the raster has no CRS; spatial alignment is ambiguous.")
             else:
                 raise ValueError("Raster has a CRS but reference GeoJSON has no CRS; refusing ambiguous spatial alignment.")
 
