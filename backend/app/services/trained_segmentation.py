@@ -42,6 +42,8 @@ def _load_model():
     path = Path(os.getenv("SAHINAKSHA_PIXEL_MODEL_PATH", str(_default_model_path())))
     if not path.exists():
         return None, f"trained model not found: {path}"
+    if path.stat().st_size < 128:
+        return None, f"trained model artifact is empty or incomplete: {path}"
     try:
         import joblib
         bundle = joblib.load(path)
