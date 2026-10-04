@@ -31,16 +31,62 @@ function AuthScreen({ onAuthenticated }) {
   }
 
   return (
-    <main className="gov-portal auth-portal"><div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div><div className="gov-tools"><span>Accessibility</span><span>हिन्दी</span><span>English</span><span>A−</span><span>A</span><span>A+</span></div></div><header className="gov-header"><div className="gov-brand"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/120px-Government_of_India_logo.svg.png" alt="Government of India emblem" /><div><div className="gov-hindi">ग्रामीण विकास मंत्रालय</div><div className="gov-title">MINISTRY OF RURAL DEVELOPMENT</div><div className="gov-subtitle">GOVERNMENT OF INDIA</div></div></div><div className="sahinaksha-brand"><strong>SahiNaksha</strong><span>AI-Assisted Cadastral Mapping</span></div></header><div className="gov-notice"><b>Prototype Portal</b> — SIH 2026 demonstration system; not an official Government of India service.</div><section className="auth-card-wrap"><div className="auth-card"><span className="badge">SECURE WORKSPACE</span><h1>Sahi<span>Naksha</span></h1><p>{mode === "login" ? "Sign in to continue to the GIS workspace." : "Create an account for the GIS workspace."}</p>
-        <form className="upload-card auth-form" onSubmit={submit}>
-          <label className="file-picker"><span>Email</span><input type="email" value={email} onChange={e=>setEmail(e.target.value)} required /></label>
-          <label className="file-picker"><span>Password</span><input type="password" minLength="6" value={password} onChange={e=>setPassword(e.target.value)} required /></label>
-          {message && <p className="error">{message}</p>}
-          <button className="primary-button" disabled={busy}>{busy ? "Please wait…" : mode === "login" ? "Sign In" : "Create Account"}</button>
-          <button type="button" className="secondary-button auth-switch" onClick={()=>{setMode(mode==="login"?"signup":"login");setMessage("")}}>
-            {mode === "login" ? "Create account" : "Back to sign in"}
-          </button>
-        </form><small className="auth-disclaimer">Access is provided only when Supabase authentication is configured for this prototype.</small></div></section><footer className="gov-footer"><div><b>Government of India</b><br/>Ministry of Rural Development • SahiNaksha Demonstration Portal</div><div>Privacy Policy &nbsp;|&nbsp; Accessibility &nbsp;|&nbsp; Contact</div></footer></main>
+    <main className="gov-portal auth-portal">
+      <div className="gov-top-strip">
+        <div>भारत सरकार &nbsp;|&nbsp; Government of India</div>
+        <div className="gov-tools">
+          <span>Accessibility</span>
+          <span>हिन्दी</span>
+          <span>English</span>
+        </div>
+      </div>
+      <header className="gov-header">
+        <div className="gov-brand">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/120px-Government_of_India_logo.svg.png" alt="Government of India emblem" />
+          <div>
+            <div className="gov-hindi">ग्रामीण विकास मंत्रालय</div>
+            <div className="gov-title">MINISTRY OF RURAL DEVELOPMENT</div>
+            <div className="gov-subtitle">GOVERNMENT OF INDIA</div>
+          </div>
+        </div>
+        <div className="sahinaksha-brand">
+          <strong>Sahi<span>Naksha</span></strong>
+          <span>AI-Assisted Cadastral Mapping</span>
+        </div>
+      </header>
+      <div className="gov-notice">
+        <b>Prototype Portal</b> — SIH 2026 demonstration system; not an official Government of India service.
+      </div>
+      <section className="auth-card-wrap">
+        <div className="auth-card">
+          <span className="badge">SECURE WORKSPACE</span>
+          <h1>Sahi<span>Naksha</span></h1>
+          <p>{mode === "login" ? "Sign in to access your digital cadastral workspace." : "Create a new surveyor account."}</p>
+          <form className="auth-form" onSubmit={submit}>
+            <div className="file-picker">
+              <span>Email Address</span>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@domain.gov.in" required />
+            </div>
+            <div className="file-picker">
+              <span>Password</span>
+              <input type="password" minLength="6" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
+            </div>
+            {message && <p className="error">{message}</p>}
+            <button className="primary-button" disabled={busy}>
+              {busy ? "Authenticating…" : mode === "login" ? "Sign In to Workspace" : "Create Surveyor Account"}
+            </button>
+            <button type="button" className="secondary-button auth-switch" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setMessage(""); }}>
+              {mode === "login" ? "New user? Create an account" : "Already have an account? Sign in"}
+            </button>
+          </form>
+          <small className="auth-disclaimer">Access is restricted to authorized GIS surveyors and land administration personnel.</small>
+        </div>
+      </section>
+      <footer className="gov-footer">
+        <div><b>Government of India</b><br />Ministry of Rural Development • SahiNaksha Demonstration Portal</div>
+        <div>Privacy Policy &nbsp;|&nbsp; Accessibility &nbsp;|&nbsp; Help &amp; Support</div>
+      </footer>
+    </main>
   );
 }
 
@@ -64,14 +110,42 @@ export default function AuthGate({ children }) {
     };
   }, []);
 
-  if (!supabaseConfigured) return <main className="gov-portal auth-portal"><div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div></div><section className="auth-loading"><div className="service-seal">GIS<br/><small>e-Governance</small></div><h1>Sahi<span>Naksha</span> configuration required</h1><p>Set VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY and VITE_API_URL in the frontend deployment environment, then reload.</p><p className="error">Database and authentication are not available until Supabase is configured.</p></section></main>;
-  if (loading) return <main className="gov-portal auth-portal"><div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div></div><section className="auth-loading"><div className="service-seal">GIS<br/><small>e-Governance</small></div><h1>Loading Sahi<span>Naksha</span>…</h1><p>Preparing secure workspace.</p></section></main>;
+  if (!supabaseConfigured) {
+    return (
+      <main className="gov-portal auth-portal">
+        <div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div></div>
+        <section className="auth-loading">
+          <div className="badge">CONFIGURATION REQUIRED</div>
+          <h1>Sahi<span>Naksha</span> setup needed</h1>
+          <p>Please configure <code>VITE_SUPABASE_URL</code>, <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> and <code>VITE_API_URL</code>.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (loading) {
+    return (
+      <main className="gov-portal auth-portal">
+        <div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div></div>
+        <section className="auth-loading">
+          <h1>Loading Sahi<span>Naksha</span>…</h1>
+          <p>Initializing secure GIS environment.</p>
+        </section>
+      </main>
+    );
+  }
+
   if (!session) return <AuthScreen onAuthenticated={setSession} />;
 
   return (
     <>
-      <div style={{position:"fixed",right:18,top:14,zIndex:2000}}>
-        <button className="secondary-button" onClick={()=>supabase.auth.signOut()}>Sign out</button>
+      <div className="user-pill">
+        <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-secondary)" }}>
+          {session.user?.email || "Surveyor"}
+        </span>
+        <button className="secondary-button compact" onClick={() => supabase.auth.signOut()}>
+          Sign Out
+        </button>
       </div>
       {children}
     </>
