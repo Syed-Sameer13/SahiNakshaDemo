@@ -1,204 +1,70 @@
 import { useState } from "react";
+import { supabase } from "../lib/supabase";
 
-const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API = import.meta.env.VITE_API_URL || "";
 
-function formatDate(value) {
-  if (!value) return "Unknown date";
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return "Unknown date";
-  }
-}
+const STAGES = ["Uploading","Validating","Processing","Generating polygons","Running topology validation","Saving results","Complete"];
 
-export default function UploadPanel({ onComplete, history = [], onOpenPrevious, onRemovePrevious }) {
-  const [file, setFile] = useState(null);
-  const [reference, setReference] = useState(null);
-  const [groundTruth, setGroundTruth] = useState(null);
-  const [dsm, setDsm] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [showPrevious, setShowPrevious] = useState(false);
-  const [fontScale, setFontScale] = useState(1);
+export default function UploadPanel({ project, survey, onComplete, onBack }) {
+  const [file,setFile]=useState(null), [reference,setReference]=useState(null), [groundTruth,setGroundTruth]=useState(null), [dsm,setDsm]=useState(null);
+  const [preview,setPreview]=useState(null), [stage,setStage]=useState(""), [progress,setProgress]=useState(0), [error,setError]=useState("");
 
-  function jump(id) {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  const choose=(f,setter,accept,label)=>{
+    if(!f)return;
+    if(!accept(f)){setError(label);return;}
+    setError(""); setter(f);
+    if(f.type.startsWith("image/")) setPreview(URL.createObjectURL(f));
+  };
 
-  function chooseImage(f) {
-    if (!f) return;
-    if (!["image/jpeg", "image/png"].includes(f.type)) {
-      setError("Please choose a JPG, JPEG or PNG image.");
-      return;
-    }
-    setError("");
-    setFile(f);
-    setPreview(URL.createObjectURL(f));
-  }
-
-  function chooseGeoJson(f, setter, label) {
-    if (!f) return;
-    if (!/\.(json|geojson)$/i.test(f.name)) {
-      setError(label + " must be a .json or .geojson file.");
-      return;
-    }
-    setError("");
-    setter(f);
-  }
-
-  function chooseDsm(f) {
-    if (!f) return;
-    if (!/\.(jpg|jpeg|png)$/i.test(f.name)) {
-      setError("DSM prototype input must currently be an aligned PNG/JPG grayscale raster.");
-      return;
-    }
-    setError("");
-    setDsm(f);
+  async function updateSurvey(status, extra={}) {
+    if(!survey?.id) return;
+    try { await supabase.from("surveys").update({status,...extra}).eq("id",survey.id); } catch {}
   }
 
   async function analyze() {
-    if (!file) {
-      setError("Choose a drone or orthomosaic image before analysis.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
+    if(!file){setError("Please select the required orthomosaic/drone image.");return;}
+    if(!API){setError("VITE_API_URL is not configured. Set it to the deployed FastAPI base URL.");return;}
+    setError(""); setProgress(5); setStage("Uploading"); await updateSurvey("uploading");
     try {
-      const body = new FormData();
-      body.append("file", file);
-      if (reference) body.append("reference_parcels", reference);
-      if (groundTruth) body.append("ground_truth", groundTruth);
-      if (dsm) body.append("dsm", dsm);
-
-      const response = await fetch(API + "/analyze", { method: "POST", body });
-      const contentType = response.headers.get("content-type") || "";
-      const data = contentType.includes("application/json")
-        ? await response.json()
-        : { detail: await response.text() };
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail ||
-          data.message ||
-          "Backend returned HTTP " + response.status
-        );
-      }
-
-      onComplete({ ...data, original_image_url: API + data.original_image_url });
-    } catch (e) {
-      if (e instanceof TypeError && /fetch/i.test(e.message)) {
-        setError("Cannot reach the SahiNaksha backend. The server may be waking up or temporarily unavailable. Please wait 30–60 seconds and try again.");
-      } else {
-        setError(e.message || "Unable to analyze image.");
-      }
-    } finally {
-      setLoading(false);
+      const body=new FormData(); body.append("file",file);
+      if(reference)body.append("reference_parcels",reference);
+      if(groundTruth)body.append("ground_truth",groundTruth);
+      if(dsm)body.append("dsm",dsm);
+      setProgress(15); setStage("Validating"); await updateSurvey("validating");
+      const response=await fetch(API.replace(/\/$/,"")+"/analyze",{method:"POST",body});
+      const type=response.headers.get("content-type")||"";
+      const data=type.includes("application/json")?await response.json():{detail:await response.text()};
+      if(!response.ok) throw new Error(data.detail||("Backend returned HTTP "+response.status));
+      setProgress(55); setStage("Processing"); await updateSurvey("processing");
+      setProgress(70); setStage("Generating polygons");
+      setProgress(82); setStage("Running topology validation");
+      setProgress(92); setStage("Saving results"); await updateSurvey("complete",{source_crs:data.raster_metadata?.crs||null});
+      setProgress(100); setStage("Complete");
+      onComplete({...data,original_image_url:API.replace(/\/$/,"")+data.original_image_url,project_id:project?.id,survey_id:survey?.id,project_name:project?.name,survey_name:survey?.name});
+    } catch(e) {
+      const msg=e instanceof TypeError?"Backend unavailable. Check VITE_API_URL and FastAPI deployment.":e.message||"Processing failed.";
+      setError(msg); await updateSurvey("failed"); setStage("");
     }
   }
 
-  return (
-    <main className="gov-portal" style={{ fontSize: `${fontScale}em` }}>
-      <div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div><div className="gov-tools"><button type="button" onClick={() => jump("main-content")}>Skip to main content</button><button type="button" onClick={() => setFontScale(v => Math.max(.9, v - .05))}>A−</button><button type="button" onClick={() => setFontScale(1)}>A</button><button type="button" onClick={() => setFontScale(v => Math.min(1.15, v + .05))}>A+</button></div></div>
-      <header className="gov-header"><div className="gov-brand"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/120px-Government_of_India_logo.svg.png" alt="Government of India emblem" /><div><div className="gov-hindi">ग्रामीण विकास मंत्रालय</div><div className="gov-title">MINISTRY OF RURAL DEVELOPMENT</div><div className="gov-subtitle">GOVERNMENT OF INDIA</div></div></div><div className="header-identity"><img className="ministry-logo" src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Ministry_of_Rural_Development.png/250px-Ministry_of_Rural_Development.png" alt="Ministry of Rural Development logo" /><div className="sahinaksha-brand"><strong>SahiNaksha</strong><span>AI-Assisted Cadastral Mapping</span></div></div></header>
-      <nav className="gov-nav"><button type="button" onClick={() => window.scrollTo({top:0,behavior:"smooth"})}>Home</button><button type="button" onClick={() => jump("main-content")}>About SahiNaksha</button><button type="button" onClick={() => jump("upload-service")}>Land &amp; Survey</button><button type="button" onClick={() => jump("upload-service")}>GIS Services</button><button type="button" onClick={() => jump("previous-work")}>Reports</button><button type="button" onClick={() => jump("upload-help")}>Help &amp; Support</button></nav>
-      <div className="gov-notice"><b>Prototype Portal</b> — SahiNaksha is an SIH 2026 demonstration system and is not an official Government of India service.</div>
-      <section className="hero gov-content" id="main-content">
-        <div className="gov-page-title"><span>Digital Land Records &amp; Geospatial Services</span><small>Department of Land Resources • Demonstration Portal</small></div>
-        <div className="service-intro"><div><span className="badge">SAHINAKSHA • GEOSPATIAL DEMONSTRATION</span><h1>AI-Assisted <span>Cadastral Mapping</span></h1><p>Drone imagery processing, GIS parcel refinement, topology validation and human-reviewed map generation.</p></div><div className="service-seal">GIS<br/><small>e-Governance</small></div></div>
-
-        <button
-          className="previous-works-button"
-          onClick={() => setShowPrevious((current) => !current)}
-          type="button"
-        >
-          <span>↩</span>
-          Previous Works
-          <small>{history.length}</small>
-        </button>
-
-        {showPrevious && (
-          <div className="previous-works-panel">
-            <div className="previous-works-header">
-              <div>
-                <span className="report-kicker">LOCAL HISTORY</span>
-                <h2>Previous analyses</h2>
-                <p>Open an earlier analysis with one click. Review decisions and attribute edits remain linked to its analysis ID.</p>
-              </div>
-              <button className="secondary-button" onClick={() => setShowPrevious(false)} type="button">Close</button>
-            </div>
-
-            {history.length === 0 ? (
-              <div className="previous-empty">
-                <strong>No previous works yet</strong>
-                <span>Completed analyses will automatically appear here.</span>
-              </div>
-            ) : (
-              <div className="previous-list">
-                {history.map((item) => (
-                  <div className="previous-item" key={item.analysis_id}>
-                    <div className="previous-item-main">
-                      <strong>Analysis {item.analysis_id || "Unknown"}</strong>
-                      <span>{formatDate(item.saved_at)}</span>
-                      <small>
-                        {item.buildings?.features?.length || 0} buildings · {item.roads?.features?.length || 0} roads · {item.parcels?.features?.length || 0} parcels
-                      </small>
-                    </div>
-                    <div className="previous-item-actions">
-                      <button className="primary-button compact" type="button" onClick={() => onOpenPrevious(item)}>
-                        Open Analysis
-                      </button>
-                      <button className="secondary-button compact" type="button" onClick={() => onRemovePrevious(item.analysis_id)}>
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        <div id="upload-service" className="workflow-heading"><span>Online Service</span><h2>Generate Preliminary Cadastral Map</h2><p>Upload the required survey imagery and optional GIS reference layers to begin processing.</p></div>
-        <div className="upload-card">
-          <div className="service-steps"><div><b>01</b><span>Upload imagery</span></div><div><b>02</b><span>Run geospatial analysis</span></div><div><b>03</b><span>Review &amp; validate</span></div></div>
-          <p>Minimum input is a high-resolution drone/orthomosaic image. Existing parcel GIS, DSM and ground-truth layers can be added for additional validation.</p>
-
-          <label className="file-picker">
-            <input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={(e) => chooseImage(e.target.files?.[0])}/>
-            <span>{file ? file.name : "1. Required — Drone / Orthomosaic Image"}</span>
-          </label>
-
-          <label className="file-picker">
-            <input type="file" accept=".json,.geojson" onChange={(e) => chooseGeoJson(e.target.files?.[0], setReference, "Existing parcel layer")}/>
-            <span>{reference ? reference.name : "2. Recommended — Existing Parcel GIS (.geojson)"}</span>
-          </label>
-
-          <label className="file-picker">
-            <input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={(e) => chooseDsm(e.target.files?.[0])}/>
-            <span>{dsm ? dsm.name : "3. Optional — Aligned DSM / Height Raster"}</span>
-          </label>
-
-          <label className="file-picker">
-            <input type="file" accept=".json,.geojson" onChange={(e) => chooseGeoJson(e.target.files?.[0], setGroundTruth, "Ground truth layer")}/>
-            <span>{groundTruth ? groundTruth.name : "4. Optional — Ground Truth for Accuracy Metrics"}</span>
-          </label>
-
-          {preview && <img className="preview" src={preview} alt="Selected aerial preview"/>}
-
-          <div className="gov-form-note"><b>Service note:</b> Generated maps are preliminary outputs for demonstration and survey-support workflows. They require authoritative cadastral and field validation before legal use.</div>
-          <div className="muted api-note">Service endpoint: {API}</div>
-
-          {error && <p className="error">{error}</p>}
-
-          <button className="primary-button" onClick={analyze} disabled={loading}>
-            {loading ? "Running AI cadastral pipeline…" : "Generate Preliminary Cadastral Map"}
-          </button>
-        </div>
-      </section>
-      <footer id="upload-help" className="gov-footer"><div><b>Government of India</b><br/>Ministry of Rural Development • SahiNaksha Demonstration Portal</div><div>Privacy Policy &nbsp;|&nbsp; Terms &nbsp;|&nbsp; Accessibility &nbsp;|&nbsp; Contact</div></footer>
-    </main>
-  );
+  return <main className="gov-portal">
+    <div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div><div className="gov-tools"><button type="button" onClick={onBack}>Project Dashboard</button></div></div>
+    <header className="gov-header"><div className="gov-brand"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/120px-Government_of_India_logo.svg.png" alt="Government of India emblem"/><div><div className="gov-hindi">ग्रामीण विकास मंत्रालय</div><div className="gov-title">MINISTRY OF RURAL DEVELOPMENT</div><div className="gov-subtitle">GOVERNMENT OF INDIA</div></div></div><div className="sahinaksha-brand"><strong>SahiNaksha</strong><span>AI-Assisted Cadastral Mapping</span></div></header>
+    <div className="gov-notice"><b>Prototype Portal</b> — SIH 2026 demonstration system; not an official Government of India service.</div>
+    <section className="gov-content" style={{maxWidth:"1100px",margin:"28px auto",padding:"0 20px"}}>
+      <div className="gov-page-title"><span>03 • DATA INGESTION</span><small>{project?.name} / {survey?.name}</small></div>
+      <div className="workflow-heading"><span>Survey Upload</span><h2>Upload &amp; Validate Inputs</h2><p>Required orthomosaic plus optional DSM/DTM, reference parcels and ground truth.</p></div>
+      <div className="upload-card">
+        <label className="file-picker"><input type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={e=>choose(e.target.files?.[0],setFile,f=>["image/jpeg","image/png"].includes(f.type),"Only JPG/PNG imagery is currently supported by the FastAPI upload endpoint.")}/><span>{file?file.name:"Required — Orthomosaic / Drone Image"}</span></label>
+        <label className="file-picker"><input type="file" accept=".json,.geojson" onChange={e=>choose(e.target.files?.[0],setReference,f=>/\.(json|geojson)$/i.test(f.name),"Reference parcel GIS must be GeoJSON.")}/><span>{reference?reference.name:"Optional — Reference Parcel GIS"}</span></label>
+        <label className="file-picker"><input type="file" accept=".jpg,.jpeg,.png" onChange={e=>choose(e.target.files?.[0],setDsm,f=>/\.(jpg|jpeg|png)$/i.test(f.name),"DSM/DTM prototype input must currently be aligned JPG/PNG.")}/><span>{dsm?dsm.name:"Optional — DSM / DTM"}</span></label>
+        <label className="file-picker"><input type="file" accept=".json,.geojson" onChange={e=>choose(e.target.files?.[0],setGroundTruth,f=>/\.(json|geojson)$/i.test(f.name),"Ground truth must be GeoJSON.")}/><span>{groundTruth?groundTruth.name:"Optional — Ground Truth"}</span></label>
+        {preview&&<img className="preview" src={preview} alt="Orthomosaic preview"/>}
+        {stage&&<div className="upload-progress" style={{marginTop:"14px"}}><b>{stage}</b><div style={{height:"8px",background:"#e2e8f0",borderRadius:"8px",marginTop:"8px"}}><div style={{width:progress+"%",height:"100%",background:"#176b4d",borderRadius:"8px"}}/></div><small>{progress}%</small></div>}
+        {error&&<p className="error">{error}</p>}
+        <div className="gov-form-note"><b>Input validation:</b> CRS and spatial alignment are checked by the backend when reference GIS is supplied. Missing/ambiguous CRS is rejected rather than silently invented.</div>
+        <button className="primary-button" disabled={!!stage||!file} onClick={analyze}>{stage&&stage!=="Complete"?stage:"Start Processing"}</button>
+      </div>
+    </section>
+  </main>;
 }
