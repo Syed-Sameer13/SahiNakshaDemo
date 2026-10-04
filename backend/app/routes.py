@@ -397,6 +397,8 @@ def patch_parcel(parcel_id: str, body: ParcelPatch, auth=Depends(get_current_aut
     if geometry is not None:
         supabase_rest("POST", "rpc/set_parcel_native_geometry", auth["access_token"], json={"p_parcel_id":parcel_id,"p_geometry":geometry,"p_srid":0})
         parcel["properties"] = {**(parcel.get("properties") or {}), "edited_geometry": geometry}
+    if changes or geometry is not None:
+        _record_audit(str(parcel["survey_id"]), "parcel_edited", auth, parcel_record_id=parcel_id, entity_type="parcel", entity_id=parcel_id, metadata={"geometry_edited": geometry is not None, "fields_changed": list(changes.keys())})
     return parcel
 
 
@@ -413,6 +415,8 @@ def _verify_and_record(parcel_id: str, decision: str, comments: str | None, geom
         props["reviewer_notes"] = comments
     now = _now()
     supabase_rest("PATCH","parcels",auth["access_token"],params={"id":f"eq.{parcel_id}"},json={"status":new_status,"properties":props,"reviewer":auth["id"],"reviewed_at":now,"updated_at":now},prefer="return=minimal")
+    event_type={"ACCEPT":"parcel_verified","REJECT":"parcel_rejected","REQUEST_FIELD_VERIFICATION":"field_verification_requested","NEEDS_REVIEW":"parcel_verified"}[decision]
+    _record_audit(str(parcel["survey_id"]), event_type, auth, parcel_record_id=parcel_id, entity_type="parcel", entity_id=parcel_id, metadata={"decision":decision,"comments":comments})
     supabase_rest("POST","reviews",auth["access_token"],json={"survey_id":parcel["survey_id"],"parcel_record_id":parcel_id,"parcel_id":parcel["parcel_id"],"reviewer":auth["id"],"decision":decision,"comments":comments,"previous_status":parcel.get("status"),"new_status":new_status,"edited_geometry":geometry},prefer="return=minimal")
     return {"parcel_id":parcel_id,"survey_id":parcel["survey_id"],"decision":decision,"status":new_status,"reviewed_at":now,"message":"Review decision saved."}
 
