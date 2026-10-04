@@ -145,6 +145,7 @@ export default function Dashboard({ result, project, survey, onBack, onReset }) 
   const [reviewer, setReviewer] = useState(() => localStorage.getItem(`${storageKey}:reviewer`) || "");
   const [reviewComments, setReviewComments] = useState("");
   const [finalMap, setFinalMap] = useState(false);
+  const [geometryRevision, setGeometryRevision] = useState(0);
 
   useEffect(() => {
     try {
@@ -291,6 +292,7 @@ export default function Dashboard({ result, project, survey, onBack, onReset }) 
     setFuture([]);
     setGeometry(x => ({ ...x, [currentId]: g }));
     setSelected(x => x ? { ...x, geometry: g } : x);
+    setGeometryRevision(v => v + 1);
     setMessage("Boundary updated. Save the review decision to persist in Supabase/PostGIS.");
   };
 
@@ -487,7 +489,11 @@ export default function Dashboard({ result, project, survey, onBack, onReset }) 
           </div>
           <div>
             <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-              {result.ai_engine?.fallback_used ? "ℹ️ Fallback processing used for non-standard image formats." : "✓ High-confidence primary AI pipeline active."}
+              {result.ai_engine?.fallback_used
+                ? "⚠️ Learned model unavailable; deterministic image fallback was used."
+                : result.ai_engine?.status === "COMPLETED"
+                  ? "✓ Learned AI segmentation completed."
+                  : "⚠️ AI status requires verification."}
             </span>
           </div>
         </div>
@@ -730,13 +736,19 @@ export default function Dashboard({ result, project, survey, onBack, onReset }) 
             )}
             {!finalMap && layers.parcels && (
               <GeoJSON
+                key={`parcels-${geometryRevision}`}
                 data={{ type: "FeatureCollection", features: all.filter(f => featureType(f) === "parcel") }}
-                style={{ color: "#0d9488", weight: 2.5, fillOpacity: 0.1 }}
+                style={(f) => ({
+                  color: featureId(f) === currentId ? "#dc2626" : "#0d9488",
+                  weight: featureId(f) === currentId ? 3.5 : 2.5,
+                  fillOpacity: featureId(f) === currentId ? 0.18 : 0.1
+                })}
                 onEachFeature={(f, l) => l.on({ click: () => select(f) })}
               />
             )}
             {!finalMap && layers.buildings && (
               <GeoJSON
+                key={`buildings-${geometryRevision}`}
                 data={{ type: "FeatureCollection", features: all.filter(f => featureType(f) === "building") }}
                 style={{ color: "#0284c7", weight: 2, fillOpacity: 0.12 }}
                 onEachFeature={(f, l) => l.on({ click: () => select(f) })}
@@ -755,8 +767,17 @@ export default function Dashboard({ result, project, survey, onBack, onReset }) 
                 style={{ color: "#16a34a", weight: 3, fillOpacity: 0.15 }}
               />
             )}
-            {editing && current && (
-              <EditorVertices feature={{ ...current, geometry: geometry[currentId] || current.geometry }} onChange={applyGeometry} />
+            {editing && current && current.geometry?.type === "Polygon" && (
+              <>
+                <Polygon
+                  positions={(geometry[currentId] || current.geometry).coordinates[0].map(p => [p[1], p[0]])}
+                  pathOptions={{ color: "#dc2626", weight: 4, fillOpacity: 0.18 }}
+                />
+                <EditorVertices
+                  feature={{ ...current, geometry: geometry[currentId] || current.geometry }}
+                  onChange={applyGeometry}
+                />
+              </>
             )}
             {drawMode && drawPoints.length > 1 && (
               <Polyline positions={drawPoints.map(p => [p[1], p[0]])} weight={2} dashArray="5 5" color="#0d9488" />
