@@ -1,194 +1,44 @@
 # SahiNaksha API Contract
 
-This contract documents the API that exists in the repository today. Planned endpoints are separated from implemented endpoints.
+## 1. Authentication
+All FastAPI application endpoints that access analysis data require Authorization: Bearer <supabase_access_token>.
+The frontend obtains the access token from the active Supabase Auth session and sends it to FastAPI.
+FastAPI validates the token against Supabase Auth, then forwards the same user token to Supabase PostgREST so database RLS evaluates the request as that authenticated user.
 
-Base URL in local development:
+## 2. POST /analyze
+Authenticated multipart request.
+Required fields: file, project_id, survey_id.
+Optional fields: reference_parcels, ground_truth, dsm.
+The backend verifies that the selected survey belongs to an accessible project.
+The endpoint creates a processing_jobs row, executes the existing AI/GIS pipeline, then persists parcels, PostGIS native geometry, validation issues, the completed result snapshot, and survey status.
 
-```
-http://127.0.0.1:8000
-```
-
-## 1. GET /
-
-Implemented.
-
-Response:
-
-```json
-{
-  "name": "SahiNaksha API",
-  "status": "running",
-  "model": "sahinaksha_pixel_model | fallback"
-}
-```
-
-The model value only indicates whether the configured pixel-model path exists; it does not prove that the artifact is valid or loadable.
-
-## 2. GET /health
-
-Implemented.
-
-Example response:
-
-```json
-{
-  "status": "ok",
-  "service": "SahiNaksha API",
-  "trained_model": {
-    "available": true,
-    "path": "sahinaksha_pixel_model.joblib"
-  }
-}
-```
-
-`available` currently means the configured file path exists.
-
-## 3. POST /analyze
-
-Implemented.
-
-Content type:
-- `multipart/form-data`
-
-Fields:
-
-| Field | Required | Current accepted type | Meaning |
-|---|---|---|---|
-| `file` | yes | JPG/JPEG/PNG | Input image |
-| `reference_parcels` | no | JSON/GeoJSON | Existing parcel reference |
-| `ground_truth` | no | JSON/GeoJSON | Evaluation reference |
-| `dsm` | no | JPG/JPEG/PNG | Aligned grayscale height evidence |
-
-Current limits:
-- Image MIME type must be `image/jpeg` or `image/png`.
-- Each uploaded file is limited to 20 MB.
-- Reference parcel input is currently expected in image-local normalized coordinates 0..100 when used for refinement.
-- General georeferenced GeoTIFF/CRS transformation is not currently implemented.
-
-### Success response
-
-Status: `200`
-
-Representative structure:
-
-```json
-{
-  "analysis_id": "uuid-like-hex",
-  "status": "completed",
-  "original_image_url": "/uploads/<filename>",
-  "buildings": {"type": "FeatureCollection", "features": []},
-  "roads": {"type": "FeatureCollection", "features": []},
-  "parcels": {"type": "FeatureCollection", "features": []},
-  "analysis_mode": "ai_segmentation | trained_segmentation | opencv_fallback",
-  "ai_engine": {},
-  "cadastral_mode": "drone_refined_existing_gis | feature_evidence_only | preliminary_feature_extraction",
-  "validation": {},
-  "topology_stats": {},
-  "evaluation": {}
-}
-```
-
-The exact feature properties depend on the selected AI/GIS path.
-
-### Errors
-
-- `400`: unsupported file type, empty file, oversized file, invalid input, or processing ValueError.
-- `500`: unexpected analysis pipeline failure.
+## 3. Analysis response
+Returned data includes analysis_id, project_id, survey_id, processing_job_id, status, original image URL, and the existing analysis result structures.
 
 ## 4. GET /analysis/{analysis_id}
-
-Implemented.
-
-Returns the stored analysis payload.
-
-Storage lookup order:
-1. in-memory `ANALYSES`
-2. disk-backed `AnalysisStore`
-
-Returns:
-- `200` if found.
-- `404` if not found.
+Authenticated. Returns an analysis only when its linked survey is accessible to the authenticated user.
 
 ## 5. GET /analysis/{analysis_id}/metrics
+Authenticated. Returns parcel, topology, validation, review-priority, and evaluation metrics.
 
-Implemented.
+## 6. Validation endpoints
+GET /analysis/{analysis_id}/validation supports severity, issue_type, status, and parcel_id filters.
+GET /analysis/{analysis_id}/validation/summary returns validation and review-priority summaries.
+GET /analysis/{analysis_id}/validation/parcels/{parcel_id} returns parcel-specific validation and explainable review information.
 
-Returns derived metrics including:
-- analysis mode,
-- AI engine,
-- cadastral mode,
-- topology statistics,
-- validation statistics,
-- parcel count,
-- mean review score,
-- total area when available,
-- area summary,
-- review summary,
-- ground-truth evaluation.
+## 7. GET /analysis/{analysis_id}/export
+Authenticated. Returns GeoJSON and records an exports audit row.
 
-This endpoint does not currently read metrics from Supabase/PostGIS.
+## 8. GET /surveys/{survey_id}/latest-result
+Authenticated. Returns the latest completed processing job and its persisted result_snapshot. The frontend uses this to reopen a completed survey after refresh or a new login.
 
-## 6. GET /analysis/{analysis_id}/export
+## 9. Direct Supabase operations
+Project/survey CRUD and authoritative review persistence use the Supabase JavaScript client with the authenticated session.
+Review persistence updates the parcels row, stores edited geometry/properties, inserts a reviews history row, and updates PostGIS native geometry through the set_parcel_native_geometry RPC.
 
-Implemented.
+## 10. Security
+Typical responses: 400 invalid input, 401 missing/invalid/expired token, 403 unauthorized project/survey, 404 missing resource, 500 processing/persistence failure.
+Never put a Supabase secret/service key in React source, VITE_* variables, Git, browser localStorage, or request bodies. Only the publishable key belongs in the frontend environment.
 
-Returns:
-- media type: `application/geo+json`
-- attachment filename: `sahinaksha-{analysis_id}.geojson`
-
-The export is the stored analysis payload serialized as JSON/GeoJSON.
-
-## 7. Authentication
-
-Frontend authentication exists through Supabase Auth in `AuthGate.jsx`.
-
-The current FastAPI endpoints do not validate a Supabase access token or map requests to a Supabase project owner.
-
-Therefore:
-- frontend login exists;
-- backend API authorization is **not yet implemented**.
-
-This distinction is intentional and important.
-
-## 8. Survey/project APIs
-
-Not implemented.
-
-There are currently no backend endpoints for:
-- `POST /projects`
-- `GET /projects`
-- `POST /surveys`
-- project ownership administration
-- review persistence
-- audit logs
-
-These should be added incrementally when Supabase runtime persistence is implemented.
-
-## 9. Administrator APIs
-
-Not implemented.
-
-There are no current endpoints for:
-- user management,
-- project administration,
-- processing dashboard,
-- audit/review monitoring.
-
-## 10. Future API contract direction
-
-When persistence is implemented, prefer additive endpoints such as:
-
-```
-POST   /projects
-GET    /projects
-GET    /projects/{project_id}
-POST   /projects/{project_id}/surveys
-GET    /surveys/{survey_id}
-POST   /surveys/{survey_id}/process
-GET    /surveys/{survey_id}/status
-GET    /surveys/{survey_id}/review
-POST   /surveys/{survey_id}/review
-GET    /surveys/{survey_id}/export
-```
-
-These are planned contracts, not current APIs.
+## 11. Geometry CRS rule
+The current AI output is image-local normalized 0..100 geometry. It is stored in PostGIS with SRID 0 and explicitly labelled LOCAL_IMAGE_0_100. The application does not invent EPSG:4326.
