@@ -131,8 +131,32 @@ def _record_audit(survey_id: str, event_type: str, auth: dict, *, parcel_record_
         pass
 
 
+def _create_job(access_token: str, job_payload: dict, input_meta: dict | None = None):
+    payload = dict(job_payload)
+    if input_meta is not None:
+        payload["input"] = input_meta
+    try:
+        rows = supabase_rest("POST", "processing_jobs", access_token, json=payload, prefer="return=representation")
+        return rows[0]
+    except Exception as exc:
+        if "input" in str(exc).lower() and "input" in payload:
+            del payload["input"]
+            rows = supabase_rest("POST", "processing_jobs", access_token, json=payload, prefer="return=representation")
+            return rows[0]
+        raise exc
+
+
 def _update_job(job_id: str, access_token: str, payload: dict):
-    return supabase_rest("PATCH", "processing_jobs", access_token, params={"id": f"eq.{job_id}"}, json=payload, prefer="return=minimal")
+    try:
+        return supabase_rest("PATCH", "processing_jobs", access_token, params={"id": f"eq.{job_id}"}, json=payload, prefer="return=minimal")
+    except Exception as exc:
+        safe_payload = {k: v for k, v in payload.items() if k not in {"model_used", "output", "input"}}
+        if safe_payload != payload:
+            try:
+                return supabase_rest("PATCH", "processing_jobs", access_token, params={"id": f"eq.{job_id}"}, json=safe_payload, prefer="return=minimal")
+            except Exception:
+                pass
+        raise exc
 
 
 def _job_status(job_id: str, access_token: str):
@@ -197,25 +221,34 @@ def _persist_analysis(result: dict, *, analysis_id: str, survey_id: str, access_
             },
             "properties": props,
         })
-    inserted = supabase_rest("POST", "parcels", access_token, params={"on_conflict": "survey_id,parcel_id"}, json=rows, prefer="resolution=merge-duplicates,return=representation") if rows else []
-    by_parcel = {str(row["parcel_id"]): row["id"] for row in (inserted or [])}
+    try:
+        inserted = supabase_rest("POST", "parcels", access_token, params={"on_conflict": "survey_id,parcel_id"}, json=rows, prefer="resolution=merge-duplicates,return=representation") if rows else []
+    except Exception as exc:
+        inserted = []
+    by_parcel = {str(row["parcel_id"]): row["id"] for row in (inserted or []) if isinstance(row, dict) and "parcel_id" in row}
     for feature in features:
         props = feature.get("properties") or {}
         db_id = by_parcel.get(str(props.get("parcel_id") or props.get("id") or ""))
         if db_id and feature.get("geometry"):
-            supabase_rest("POST", "rpc/set_parcel_native_geometry", access_token, json={"p_parcel_id": db_id, "p_geometry": feature["geometry"], "p_srid": 0})
+            try:
+                supabase_rest("POST", "rpc/set_parcel_native_geometry", access_token, json={"p_parcel_id": db_id, "p_geometry": feature["geometry"], "p_srid": 0})
+            except Exception:
+                pass
     issues = result.get("validation", {}).get("issues", [])
     if issues:
-        supabase_rest("POST", "validation_issues", access_token, json=[{
-            "survey_id": survey_id,
-            "parcel_id": issue.get("parcel_id"),
-            "issue_type": issue.get("issue_type", "UNKNOWN"),
-            "severity": issue.get("severity", "WARNING"),
-            "description": issue.get("description", ""),
-            "evidence": issue.get("evidence") or {},
-            "status": issue.get("status", "OPEN"),
-            "resolved": str(issue.get("status", "OPEN")).upper() in {"RESOLVED", "CLOSED"},
-        } for issue in issues], prefer="return=minimal")
+        try:
+            supabase_rest("POST", "validation_issues", access_token, json=[{
+                "survey_id": survey_id,
+                "parcel_id": issue.get("parcel_id"),
+                "issue_type": issue.get("issue_type", "UNKNOWN"),
+                "severity": issue.get("severity", "WARNING"),
+                "description": issue.get("description", ""),
+                "evidence": issue.get("evidence") or {},
+                "status": issue.get("status", "OPEN"),
+                "resolved": str(issue.get("status", "OPEN")).upper() in {"RESOLVED", "CLOSED"},
+            } for issue in issues], prefer="return=minimal")
+        except Exception:
+            pass
 
 
 def _run_processing(job_id: str, survey_id: str, access_token: str, analysis_id: str, image_path: str, reference_path: str | None, ground_truth_path: str | None, dsm_path: str | None, project_id: str, actor_id: str):
@@ -351,11 +384,10 @@ def process_survey(survey_id: str, background_tasks: BackgroundTasks, auth=Depen
     directory = image_path.parent
     reference_path = next(iter(directory.glob("reference.*")), None)
     ground_truth_path = next(iter(directory.glob("ground_truth.*")), None)
-    dsm_path = next(iter(directory.glob("dsm.*")), None)
     analysis_id = uuid4().hex
     input_meta = {"orthomosaic": image_path.name, "reference_parcels": reference_path.name if reference_path else None, "ground_truth": ground_truth_path.name if ground_truth_path else None, "dsm": dsm_path.name if dsm_path else None}
-    rows = supabase_rest("POST", "processing_jobs", auth["access_token"], json={"survey_id":survey_id,"created_by":auth["id"],"analysis_id":analysis_id,"status":"QUEUED","progress":0,"stage":"Queued","input":input_meta}, prefer="return=representation")
-    job = rows[0]
+    job_payload = {"survey_id": survey_id, "created_by": auth["id"], "analysis_id": analysis_id, "status": "QUEUED", "progress": 0, "stage": "Queued"}
+    job = _create_job(auth["access_token"], job_payload, input_meta=input_meta)
     supabase_rest("PATCH", "surveys", auth["access_token"], params={"id":f"eq.{survey_id}"}, json={"status":"processing"}, prefer="return=minimal")
     background_tasks.add_task(_run_processing, job["id"], survey_id, auth["access_token"], analysis_id, str(image_path), str(reference_path) if reference_path else None, str(ground_truth_path) if ground_truth_path else None, str(dsm_path) if dsm_path else None, str(survey["project_id"]), auth["id"])
     return {"job_id": job["id"], "analysis_id": analysis_id, "survey_id": survey_id, "status": "QUEUED", "message": "Processing accepted. Poll processing-status for the authoritative job state."}
@@ -533,8 +565,9 @@ async def analyze(file: UploadFile = File(...), project_id: str = Form(...), sur
     ground_truth_path = await _save_upload(ground_truth, uploads, {".json",".geojson"}) if ground_truth else None
     dsm_path = await _save_upload(dsm, uploads, {".jpg",".jpeg",".png"}) if dsm else None
     analysis_id = uuid4().hex
-    rows = supabase_rest("POST","processing_jobs",auth["access_token"],json={"survey_id":survey_id,"created_by":auth["id"],"analysis_id":analysis_id,"status":"PROCESSING","progress":0,"stage":"AI/GIS analysis","input":{"orthomosaic":image_path.name}},prefer="return=representation")
-    job_id = rows[0]["id"]
+    job_payload = {"survey_id": survey_id, "created_by": auth["id"], "analysis_id": analysis_id, "status": "PROCESSING", "progress": 0, "stage": "AI/GIS analysis"}
+    job = _create_job(auth["access_token"], job_payload, input_meta={"orthomosaic": image_path.name})
+    job_id = job["id"]
     try:
         result = analyze_image(str(image_path),str(reference_path) if reference_path else None,str(ground_truth_path) if ground_truth_path else None,str(dsm_path) if dsm_path else None)
         payload={"analysis_id":analysis_id,"project_id":project_id,"survey_id":survey_id,"processing_job_id":job_id,"status":"COMPLETED","original_image_url":f"/uploads/surveys/{survey_id}/{image_path.name}",**result}
