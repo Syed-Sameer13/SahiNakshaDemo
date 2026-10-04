@@ -1,5 +1,6 @@
 from pathlib import Path
 from uuid import uuid4
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
@@ -109,8 +110,9 @@ def _persist_analysis(result: dict, *, analysis_id: str, survey_id: str, access_
         "POST",
         "parcels",
         access_token,
+        params={"on_conflict": "survey_id,parcel_id"},
         json=rows,
-        prefer="return=representation",
+        prefer="resolution=merge-duplicates,return=representation",
     ) if rows else []
 
     by_parcel = {str(row["parcel_id"]): row["id"] for row in (inserted or [])}
@@ -218,6 +220,7 @@ async def analyze(
             "progress": 100,
             "stage": "Complete",
             "result_snapshot": payload,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
         })
         supabase_rest(
             "PATCH",
