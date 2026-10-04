@@ -1,0 +1,9 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {"type":"Feature","properties":{"parcel_id":"SYN-001","source":"synthetic_reference"},"geometry":{"type":"Polygon","coordinates":[[[5,5],[45,5],[45,45],[5,45],[5,5]]]}},
+    {"type":"Feature","properties":{"parcel_id":"SYN-002","source":"synthetic_reference"},"geometry":{"type":"Polygon","coordinates":[[[55,5],[95,5],[95,45],[55,45],[55,5]]]}},
+    {"type":"Feature","properties":{"parcel_id":"SYN-003","source":"synthetic_reference"},"geometry":{"type":"Polygon","coordinates":[[[5,55],[48,55],[48,95],[5,95],[5,55]]]}},
+    {"type":"Feature","properties":{"parcel_id":"SYN-004","source":"synthetic_reference"},"geometry":{"type":"Polygon","coordinates":[[[55,55],[95,55],[95,95],[55,95],[55,55]]]}}
+  ]
+}
