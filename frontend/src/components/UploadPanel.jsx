@@ -26,26 +26,48 @@ export default function UploadPanel({ project, survey, onComplete, onBack }) {
     if(!API){setError("VITE_API_URL is not configured. Set it to the deployed FastAPI base URL.");return;}
     setError(""); setProgress(5); setStage("Uploading"); await updateSurvey("uploading");
     try {
-      const body=new FormData();
-      body.append("file",file);
-      body.append("project_id",String(project?.id||""));
-      body.append("survey_id",String(survey?.id||""));
       const { data: { session } } = await supabase.auth.getSession();
       if(!session?.access_token) throw new Error("Authentication session expired. Please sign in again.");
+      const headers={Authorization:`Bearer ${session.access_token}`};
+      const base=API.replace(/\/$/,"");
+      const body=new FormData();
+      body.append("file",file);
       if(reference)body.append("reference_parcels",reference);
       if(groundTruth)body.append("ground_truth",groundTruth);
       if(dsm)body.append("dsm",dsm);
-      setProgress(15); setStage("Validating"); await updateSurvey("validating");
-      const response=await fetch(API.replace(/\/$/,"")+"/analyze",{method:"POST",body,headers:{Authorization:`Bearer ${session.access_token}`}});
-      const type=response.headers.get("content-type")||"";
-      const data=type.includes("application/json")?await response.json():{detail:await response.text()};
-      if(!response.ok) throw new Error(data.detail||("Backend returned HTTP "+response.status));
-      setProgress(55); setStage("Processing"); await updateSurvey("processing");
-      setProgress(70); setStage("Generating polygons");
-      setProgress(82); setStage("Running topology validation");
-      setProgress(92); setStage("Saving results"); await updateSurvey("complete",{source_crs:data.raster_metadata?.crs||null,source_image_url:data.original_image_url||null});
+
+      const uploadResponse=await fetch(base+`/api/surveys/${survey.id}/upload`,{method:"POST",body,headers});
+      const uploadType=uploadResponse.headers.get("content-type")||"";
+      const uploadData=uploadType.includes("application/json")?await uploadResponse.json():{error:{message:await uploadResponse.text()}};
+      if(!uploadResponse.ok) throw new Error(uploadData?.error?.message||uploadData?.detail||("Upload failed with HTTP "+uploadResponse.status));
+
+      setProgress(20); setStage("Queued"); await updateSurvey("processing");
+      const processResponse=await fetch(base+`/api/surveys/${survey.id}/process`,{method:"POST",headers});
+      const processData=await processResponse.json().catch(()=>({}));
+      if(!processResponse.ok) throw new Error(processData?.error?.message||processData?.detail||("Processing request failed with HTTP "+processResponse.status));
+
+      let statusData=processData;
+      for(let attempt=0;attempt<120;attempt++){
+        await new Promise(resolve=>setTimeout(resolve,1000));
+        const statusResponse=await fetch(base+`/api/surveys/${survey.id}/processing-status`,{headers});
+        statusData=await statusResponse.json().catch(()=>({}));
+        if(!statusResponse.ok) throw new Error(statusData?.error?.message||statusData?.detail||("Status request failed with HTTP "+statusResponse.status));
+        const s=String(statusData.status||"").toUpperCase();
+        setStage(statusData.stage||s||"Processing");
+        setProgress(typeof statusData.progress==="number"?statusData.progress:Math.min(95,25+attempt));
+        if(s==="COMPLETED") break;
+        if(s==="FAILED") throw new Error(statusData.error||"AI/GIS processing failed.");
+        if(attempt===119) throw new Error("Processing timed out while waiting for the backend job.");
+      }
+
+      setProgress(96); setStage("Loading final results");
+      const resultResponse=await fetch(base+`/api/surveys/${survey.id}/results`,{headers});
+      const resultData=await resultResponse.json().catch(()=>({}));
+      if(!resultResponse.ok) throw new Error(resultData?.error?.message||resultData?.detail||("Results request failed with HTTP "+resultResponse.status));
+      const payload=resultData.result||resultData;
+      await updateSurvey("complete",{source_crs:payload.raster_metadata?.crs||null,source_image_url:payload.original_image_url||uploadData.source_image_url||null});
       setProgress(100); setStage("Complete");
-      onComplete({...data,original_image_url:API.replace(/\/$/,"")+data.original_image_url,project_id:project?.id,survey_id:survey?.id,project_name:project?.name,survey_name:survey?.name});
+      onComplete({...payload,original_image_url:(payload.original_image_url||uploadData.source_image_url||"").startsWith("http")?(payload.original_image_url||uploadData.source_image_url):base+(payload.original_image_url||uploadData.source_image_url||""),project_id:project?.id,survey_id:survey?.id,project_name:project?.name,survey_name:survey?.name});
     } catch(e) {
       const msg=e instanceof TypeError?"Backend unavailable. Check VITE_API_URL and FastAPI deployment.":e.message||"Processing failed.";
       setError(msg); await updateSurvey("failed"); setStage("");
