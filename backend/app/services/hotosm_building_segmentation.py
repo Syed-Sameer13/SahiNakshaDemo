@@ -61,8 +61,12 @@ def _session():
 
 
 def _prepare(tile: np.ndarray) -> np.ndarray:
+    # Match HOTOSM/fAIr exactly: every inference window is resampled to
+    # the native 256x256 model input. Do not zero-pad small uploads because
+    # the black padding changes the image statistics and can suppress roofs.
     if tile.shape[:2] != (MODEL_SIZE, MODEL_SIZE):
-        tile = cv2.resize(tile, (MODEL_SIZE, MODEL_SIZE), interpolation=cv2.INTER_AREA)
+        interpolation = cv2.INTER_CUBIC if tile.shape[0] < MODEL_SIZE or tile.shape[1] < MODEL_SIZE else cv2.INTER_AREA
+        tile = cv2.resize(tile, (MODEL_SIZE, MODEL_SIZE), interpolation=interpolation)
     rgb = cv2.cvtColor(tile, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
     rgb = (rgb - MEAN) / STD
     return np.transpose(rgb, (2, 0, 1))[None, ...].astype(np.float32)
@@ -216,20 +220,24 @@ def run_hotosm_building_segmentation(image_path: str):
     height, width = image.shape[:2]
     stride = int(os.getenv("SAHINAKSHA_HOTOSM_STRIDE", str(STRIDE_DEFAULT)))
     threshold = float(os.getenv("SAHINAKSHA_HOTOSM_THRESHOLD", str(THRESHOLD_DEFAULT)))
+    if not 0.0 < threshold < 1.0:
+        raise ValueError("SAHINAKSHA_HOTOSM_THRESHOLD must be between 0 and 1.")
     probability = np.zeros((height, width), dtype=np.float32)
     weights = np.zeros((height, width), dtype=np.float32)
     windows = _windows(height, width, stride)
     for x, y in windows:
         crop = image[y:min(y + MODEL_SIZE, height), x:min(x + MODEL_SIZE, width)]
         actual_h, actual_w = crop.shape[:2]
-        if actual_h < MODEL_SIZE or actual_w < MODEL_SIZE:
-            padded = np.zeros((MODEL_SIZE, MODEL_SIZE, 3), dtype=np.uint8)
-            padded[:actual_h, :actual_w] = crop
-            tile = padded
-        else:
-            tile = crop
-        tile_prob = _predict_tile(session, tile)
-        probability[y:y + actual_h, x:x + actual_w] += tile_prob[:actual_h, :actual_w]
+        # The official HOTOSM serving path resamples each RGB window to 256x256.
+        # Resize the prediction back to the crop footprint before stitching.
+        tile_prob = _predict_tile(session, crop)
+        if tile_prob.shape != (actual_h, actual_w):
+            tile_prob = cv2.resize(
+                tile_prob,
+                (actual_w, actual_h),
+                interpolation=cv2.INTER_LINEAR,
+            )
+        probability[y:y + actual_h, x:x + actual_w] += tile_prob
         weights[y:y + actual_h, x:x + actual_w] += 1.0
     probability /= np.maximum(weights, 1.0)
     building_mask = probability >= threshold
@@ -241,5 +249,11 @@ def run_hotosm_building_segmentation(image_path: str):
         "provider": "hotosm_dinov3s_buildings", "status": "MODEL_AVAILABLE", "threshold": threshold,
         "stride": stride, "windows": len(windows), "accepted_buildings": len(buildings["features"]),
         "accepted_roads": len(roads["features"]), "preliminary_parcel_blocks": len(parcels["features"]),
-        "parcel_mode": "preliminary_blocks_not_legal_cadastre", "model": str(model_path()), "confidence_available": any(f.get("properties", {}).get("confidence_available") for f in buildings["features"]),
+        "parcel_mode": "preliminary_blocks_not_legal_cadastre",
+        "model": str(model_path()),
+        "confidence_available": any(f.get("properties", {}).get("confidence_available") for f in buildings["features"]),
+        "input_size": [width, height],
+        "native_model_size": MODEL_SIZE,
+        "small_input_resampled": bool(width < MODEL_SIZE or height < MODEL_SIZE),
+        "inference_note": "Windows are resized to the HOTOSM 256x256 input contract before prediction and resized back before mosaicking.",
     }
