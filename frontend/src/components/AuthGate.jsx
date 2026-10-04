@@ -64,7 +64,7 @@ export default function AuthGate({ children }) {
     };
   }, []);
 
-  if (!supabaseConfigured) return <main className="gov-portal auth-portal"><div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div></div><section className="auth-loading"><div className="service-seal">GIS<br/><small>e-Governance</small></div><h1>Sahi<span>Naksha</span> configuration required</h1><p>Set VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY and VITE_API_URL in the frontend deployment environment, then reload.</p><p className="error">Database and authentication are not available until Supabase is configured.</p></section></main>;
+  if (!supabaseConfigured) return <main className="gov-portal auth-portal"><div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div></div><section className="auth-loading"><div className="service-seal">GIS<br/><small>e-Governance</small></div><h1>Sahi<span>Naksha</span> configuration required</h1><p>Set VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY and VITE_API_URL in the frontend deployment environment, then reload.</p><p className="error">Database and authentication are not available until Supabase is configured.</p></section></main>;
   if (loading) return <main className="gov-portal auth-portal"><div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div></div><section className="auth-loading"><div className="service-seal">GIS<br/><small>e-Governance</small></div><h1>Loading Sahi<span>Naksha</span>…</h1><p>Preparing secure workspace.</p></section></main>;
   if (!session) return <AuthScreen onAuthenticated={setSession} />;
 
