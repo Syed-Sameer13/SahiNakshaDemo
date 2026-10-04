@@ -18,8 +18,19 @@ from .services.storage import AnalysisStore
 from .services.supabase_client import supabase_rest
 
 router = APIRouter()
-ALLOWED_TYPES = {"image/jpeg", "image/png"}
-MAX_SIZE = 20 * 1024 * 1024
+ALLOWED_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/jpg",
+    "image/x-png",
+    "image/pjpeg",
+    "application/octet-stream",
+    "image/ppm",
+    "image/x-portable-pixmap",
+    "image/tiff",
+    "image/webp",
+}
+MAX_SIZE = 50 * 1024 * 1024
 ANALYSES = {}
 BASE_DIR = Path(__file__).resolve().parents[1]
 UPLOADS = BASE_DIR / "uploads"
@@ -303,9 +314,10 @@ def get_survey(survey_id: str, auth=Depends(get_current_auth)):
 async def upload_survey(survey_id: str, file: UploadFile = File(...), reference_parcels: UploadFile | None = File(None), ground_truth: UploadFile | None = File(None), dsm: UploadFile | None = File(None), auth=Depends(get_current_auth)):
     _verify_survey_access(survey_id, auth["access_token"])
     directory = UPLOADS / "surveys" / survey_id
-    if file.content_type not in ALLOWED_TYPES:
-        _error("UNSUPPORTED_FILE", "Only JPG, JPEG and PNG orthomosaic images are supported.")
-    image_path = await _save_upload(file, directory, {".jpg", ".jpeg", ".png"})
+    suffix = Path(file.filename or "").suffix.lower()
+    if file.content_type not in ALLOWED_TYPES and suffix not in {".jpg", ".jpeg", ".png", ".ppm", ".tif", ".tiff"}:
+        _error("UNSUPPORTED_FILE", "Only JPG, JPEG, PNG, PPM and TIFF orthomosaic images are supported.")
+    image_path = await _save_upload(file, directory, {".jpg", ".jpeg", ".png", ".ppm", ".tif", ".tiff"})
     optional = {}
     if reference_parcels:
         optional["reference"] = await _save_upload(reference_parcels, directory, {".json", ".geojson"})

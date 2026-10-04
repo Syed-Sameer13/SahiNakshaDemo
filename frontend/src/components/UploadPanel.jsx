@@ -36,6 +36,10 @@ export default function UploadPanel({ project, survey, onComplete, onBack }) {
       setError("Please select the required orthomosaic / drone image.");
       return;
     }
+    if (!survey?.id) {
+      setError("No active survey workspace selected. Please select or create a survey in the Project Dashboard.");
+      return;
+    }
     setError("");
     setProgress(5);
     setStage("Uploading inputs");
@@ -100,7 +104,11 @@ export default function UploadPanel({ project, survey, onComplete, onBack }) {
         survey_name: survey?.name
       });
     } catch (e) {
-      const msg = e instanceof TypeError ? "Backend unavailable. Check VITE_API_URL and FastAPI deployment." : e.message || "Processing failed.";
+      console.error("Upload & Analysis Error:", e);
+      let msg = e.message || "Processing failed.";
+      if (e instanceof TypeError && e.message.includes("fetch")) {
+        msg = `Backend connection error (${e.message}). Ensure FastAPI is running on ${API}.`;
+      }
       setError(msg);
       await updateSurvey("failed");
       setStage("");
