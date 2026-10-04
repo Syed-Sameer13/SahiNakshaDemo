@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from .auth import get_current_auth
 from .services.analysis import analyze_image
-from .services.export_service import to_json_bytes
+from .services.export_service import to_json_bytes, build_pdf_report, serialize_geojson, LIMITATION
 from .services.storage import AnalysisStore
 from .services.supabase_client import supabase_rest
 
@@ -113,6 +113,13 @@ def _get_parcel(parcel_id: str, access_token: str):
     return parcel
 
 
+def _record_audit(survey_id: str, event_type: str, auth: dict, *, parcel_record_id: str | None = None, entity_type: str | None = None, entity_id: str | None = None, metadata: dict | None = None):
+    try:
+        supabase_rest("POST", "audit_events", auth["access_token"], json={"survey_id":survey_id,"parcel_record_id":parcel_record_id,"actor_id":auth["id"],"event_type":event_type,"entity_type":entity_type,"entity_id":entity_id,"metadata":metadata or {}}, prefer="return=minimal")
+    except Exception:
+        pass
+
+
 def _update_job(job_id: str, access_token: str, payload: dict):
     return supabase_rest("PATCH", "processing_jobs", access_token, params={"id": f"eq.{job_id}"}, json=payload, prefer="return=minimal")
 
@@ -200,10 +207,11 @@ def _persist_analysis(result: dict, *, analysis_id: str, survey_id: str, access_
         } for issue in issues], prefer="return=minimal")
 
 
-def _run_processing(job_id: str, survey_id: str, access_token: str, analysis_id: str, image_path: str, reference_path: str | None, ground_truth_path: str | None, dsm_path: str | None, project_id: str):
+def _run_processing(job_id: str, survey_id: str, access_token: str, analysis_id: str, image_path: str, reference_path: str | None, ground_truth_path: str | None, dsm_path: str | None, project_id: str, actor_id: str):
     started = _now()
     try:
         _update_job(job_id, access_token, {"status": "PROCESSING", "stage": "AI/GIS analysis", "started_at": started, "progress": 0})
+        _record_audit(survey_id,"processing_started",{"id":actor_id,"access_token":access_token},entity_type="processing_job",entity_id=job_id,metadata={"analysis_id":analysis_id})
         result = analyze_image(image_path, reference_path, ground_truth_path, dsm_path)
         model = result.get("ai_engine", {}).get("model_name") or result.get("ai_engine", {}).get("provider") or result.get("analysis_mode") or "unknown"
         payload = {
@@ -218,6 +226,7 @@ def _run_processing(job_id: str, survey_id: str, access_token: str, analysis_id:
         _persist_analysis(result, analysis_id=analysis_id, survey_id=survey_id, access_token=access_token, job_id=job_id)
         ANALYSES[analysis_id] = payload
         STORE.save(analysis_id, payload)
+        _record_audit(survey_id,"processing_completed",{"id":actor_id,"access_token":access_token},entity_type="processing_job",entity_id=job_id,metadata={"analysis_id":analysis_id,"model_used":str(model)})
         _update_job(job_id, access_token, {
             "status": "COMPLETED",
             "stage": "Complete",
@@ -310,6 +319,7 @@ async def upload_survey(survey_id: str, file: UploadFile = File(...), reference_
         path.replace(target)
         optional[key] = target
     source_url = f"/uploads/surveys/{survey_id}/{image_path.name}"
+    _record_audit(survey_id,"upload",auth,entity_type="survey",entity_id=survey_id,metadata={"orthomosaic":image_path.name,"optional_inputs":{k:v.name for k,v in optional.items()}})
     supabase_rest("PATCH", "surveys", auth["access_token"], params={"id": f"eq.{survey_id}"}, json={"status":"uploaded","source_image_url":source_url}, prefer="return=minimal")
     return {"survey_id": survey_id, "status": "uploaded", "source_image_url": source_url, "inputs": {"orthomosaic": image_path.name, **{k:v.name for k,v in optional.items()}}}
 
@@ -335,7 +345,7 @@ def process_survey(survey_id: str, background_tasks: BackgroundTasks, auth=Depen
     rows = supabase_rest("POST", "processing_jobs", auth["access_token"], json={"survey_id":survey_id,"created_by":auth["id"],"analysis_id":analysis_id,"status":"QUEUED","progress":0,"stage":"Queued","input":input_meta}, prefer="return=representation")
     job = rows[0]
     supabase_rest("PATCH", "surveys", auth["access_token"], params={"id":f"eq.{survey_id}"}, json={"status":"processing"}, prefer="return=minimal")
-    background_tasks.add_task(_run_processing, job["id"], survey_id, auth["access_token"], analysis_id, str(image_path), str(reference_path) if reference_path else None, str(ground_truth_path) if ground_truth_path else None, str(dsm_path) if dsm_path else None, str(survey["project_id"]))
+    background_tasks.add_task(_run_processing, job["id"], survey_id, auth["access_token"], analysis_id, str(image_path), str(reference_path) if reference_path else None, str(ground_truth_path) if ground_truth_path else None, str(dsm_path) if dsm_path else None, str(survey["project_id"]), auth["id"])
     return {"job_id": job["id"], "analysis_id": analysis_id, "survey_id": survey_id, "status": "QUEUED", "message": "Processing accepted. Poll processing-status for the authoritative job state."}
 
 
@@ -433,62 +443,66 @@ def survey_validation(survey_id: str, severity: str | None = Query(None), issue_
     return {"survey_id":survey_id,"count":len(rows),"issues":rows}
 
 
-def _latest_snapshot_with_db_reviews(survey_id: str, auth):
-    job = _latest_job(survey_id, auth["access_token"], completed_only=True)
-    if not job or not job.get("result_snapshot"):
-        _error("RESULT_NOT_READY","No completed processing result exists for this survey.",http_status=404)
-    snapshot = json.loads(json.dumps(job["result_snapshot"]))
-    db_parcels = supabase_rest("GET","parcels",auth["access_token"],params={"select":"parcel_id,status,properties,updated_at","survey_id":f"eq.{survey_id}"})
-    by_id = {str(p["parcel_id"]):p for p in db_parcels}
-    for feature in snapshot.get("parcels",{}).get("features",[]):
-        pid = str((feature.get("properties") or {}).get("parcel_id") or "")
-        db = by_id.get(pid)
-        if db:
-            feature["properties"] = {**(feature.get("properties") or {}), **(db.get("properties") or {}), "review_status": db.get("status"), "updated_at": db.get("updated_at")}
-            if feature["properties"].get("edited_geometry"):
-                feature["geometry"] = feature["properties"]["edited_geometry"]
-    return snapshot, job
+def _final_export_state(survey_id: str, auth):
+    survey=_verify_survey_access(survey_id,auth["access_token"])
+    project=_verify_project_access(str(survey["project_id"]),auth["access_token"])
+    job=_latest_job(survey_id,auth["access_token"],completed_only=True)
+    if not job: _error("RESULT_NOT_READY","No completed processing result exists for this survey.",http_status=404)
+    rows=supabase_rest("POST","rpc/get_survey_export_rows",auth["access_token"],json={"p_survey_id":survey_id}) or []
+    issues=supabase_rest("GET","validation_issues",auth["access_token"],params={"select":"id,parcel_id,issue_type,severity,description,status,resolved,evidence,created_at","survey_id":f"eq.{survey_id}","order":"created_at.asc"}) or []
+    by_parcel={}
+    for issue in issues: by_parcel.setdefault(str(issue.get("parcel_id") or ""),[]).append(issue)
+    parcels=[]
+    for row in rows:
+        comparison=row.get("reference_comparison") or {}
+        pissues=by_parcel.get(str(row.get("parcel_id")),[])
+        sev={}
+        for issue in pissues:
+            s=str(issue.get("severity") or "INFO").upper(); sev[s]=sev.get(s,0)+1
+        props=row.get("properties") or {}
+        parcels.append({**row,"validation_issue_count":len(pissues),"validation_summary":sev,"reference_area":comparison.get("reference_area",props.get("reference_area")),"area_difference_percent":comparison.get("percentage_area_difference",props.get("percentage_area_difference")),"provenance":row.get("provenance") or {}})
+    statuses=[str(r.get("review_status") or "").lower() for r in parcels]
+    areas=[r["area_sq_m"] for r in parcels if isinstance(r.get("area_sq_m"),(int,float))]
+    discrepancies=sum(1 for r in parcels if r.get("reference_comparison",{}).get("discrepancy_status") and str(r["reference_comparison"]["discrepancy_status"]).upper() not in {"MATCH","NONE","NO_REFERENCE"})
+    validation_summary={"errors":sum(1 for i in issues if str(i.get("severity","")).upper() in {"ERROR","CRITICAL"}),"warnings":sum(1 for i in issues if str(i.get("severity","")).upper()=="WARNING"),"discrepancies":discrepancies,"total_issues":len(issues)}
+    summary={"total_candidate_parcels":len(parcels),"reviewed_parcels":sum(1 for s in statuses if s in {"human verified","rejected","needs field survey","needs review"}),"accepted_parcels":sum(1 for s in statuses if s=="human verified"),"rejected_parcels":sum(1 for s in statuses if s=="rejected"),"field_verification_requests":sum(1 for s in statuses if s=="needs field survey"),"total_area_sq_m":round(sum(areas),3) if areas else "Not available"}
+    processing={"job_id":job.get("id"),"analysis_id":job.get("analysis_id"),"started_at":job.get("started_at"),"completed_at":job.get("completed_at"),"model_used":job.get("model_used"),"input":job.get("input") or {},"output":job.get("output") or {}}
+    return {"project":project,"survey":survey,"processing":processing,"parcels":parcels,"validation_summary":validation_summary,"summary":summary,"provenance":{"processing_job_id":job.get("id"),"analysis_id":job.get("analysis_id"),"source":"Supabase/PostGIS final reviewed database state","exported_at":_now(),"legal_status":"preliminary_output_requires_authoritative_cadastral_and_survey_validation","limitations":[LIMITATION]}},job
 
 
-def _record_export(survey_id, job_id, fmt, auth, file_name):
-    supabase_rest("POST","exports",auth["access_token"],json={"survey_id":survey_id,"processing_job_id":job_id,"created_by":auth["id"],"format":fmt,"status":"generated","file_name":file_name,"metadata":{"source":"persisted survey result"}},prefer="return=minimal")
+def _record_export(survey_id,job_id,fmt,auth,file_name):
+    supabase_rest("POST","exports",auth["access_token"],json={"survey_id":survey_id,"processing_job_id":job_id,"created_by":auth["id"],"format":fmt,"status":"generated","file_name":file_name,"metadata":{"source":"Supabase/PostGIS final reviewed state"}},prefer="return=minimal")
+    _record_audit(survey_id,"export_generated",auth,entity_type="export",entity_id=file_name,metadata={"format":fmt,"file_name":file_name})
 
 
 @router.get("/api/surveys/{survey_id}/export/geojson")
 def export_geojson(survey_id: str, auth=Depends(get_current_auth)):
-    snapshot, job = _latest_snapshot_with_db_reviews(survey_id, auth)
-    data = to_json_bytes(snapshot)
-    filename = f"sahinaksha-{survey_id}.geojson"
-    _record_export(survey_id, job["id"], "geojson", auth, filename)
-    return Response(content=data, media_type="application/geo+json", headers={"Content-Disposition":f'attachment; filename="{filename}"'})
+    state,job=_final_export_state(survey_id,auth)
+    data=to_json_bytes(serialize_geojson(state))
+    filename=f"sahinaksha-{survey_id}-final.geojson"
+    _record_export(survey_id,job["id"],"geojson",auth,filename)
+    return Response(content=data,media_type="application/geo+json",headers={"Content-Disposition":f'attachment; filename="{filename}"'})
 
 
 @router.get("/api/surveys/{survey_id}/export/csv")
 def export_csv(survey_id: str, auth=Depends(get_current_auth)):
-    snapshot, job = _latest_snapshot_with_db_reviews(survey_id, auth)
-    output = io.StringIO()
-    writer = csv.writer(output)
-    fields = ["parcel_id","area_sq_m","perimeter_m","review_score","review_priority","status","validation_status","reference_iou","percentage_area_difference"]
+    state,job=_final_export_state(survey_id,auth)
+    output=io.StringIO(); writer=csv.writer(output)
+    fields=["parcel_id","area_sq_m","perimeter_m","review_priority","review_status","validation_issue_count","reference_area","area_difference_percent","reviewer"]
     writer.writerow(fields)
-    for feature in snapshot.get("parcels",{}).get("features",[]):
-        p = feature.get("properties") or {}
-        writer.writerow([p.get(k) for k in fields])
-    filename = f"sahinaksha-{survey_id}.csv"
-    _record_export(survey_id, job["id"], "csv", auth, filename)
-    return Response(content=output.getvalue().encode("utf-8"), media_type="text/csv; charset=utf-8", headers={"Content-Disposition":f'attachment; filename="{filename}"'})
+    for row in state["parcels"]: writer.writerow([row.get(k) for k in fields])
+    filename=f"sahinaksha-{survey_id}-final.csv"
+    _record_export(survey_id,job["id"],"csv",auth,filename)
+    return Response(content=output.getvalue().encode("utf-8"),media_type="text/csv; charset=utf-8",headers={"Content-Disposition":f'attachment; filename="{filename}"'})
 
 
 @router.get("/api/surveys/{survey_id}/export/report")
 def export_report(survey_id: str, auth=Depends(get_current_auth)):
-    snapshot, job = _latest_snapshot_with_db_reviews(survey_id, auth)
-    features = snapshot.get("parcels",{}).get("features",[])
-    issues = snapshot.get("validation",{}).get("issues",[])
-    html_body = f"""<!doctype html><html><head><meta charset="utf-8"><title>SahiNaksha Survey Report</title><style>body{{font-family:Arial,sans-serif;margin:40px;color:#172033}}table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #ccd3dc;padding:8px;text-align:left}}th{{background:#eef2f6}}</style></head><body><h1>SahiNaksha Survey Report</h1><p><b>Survey:</b> {html.escape(survey_id)}</p><p><b>Processing job:</b> {html.escape(str(job["id"]))}</p><p><b>Parcels:</b> {len(features)} &nbsp; <b>Validation issues:</b> {len(issues)}</p><p><b>Legal status:</b> Preliminary AI/GIS evidence requiring human surveyor review. This output is not a legally authoritative cadastral boundary.</p><table><tr><th>Parcel</th><th>Area m²</th><th>Review priority</th><th>Status</th></tr>{''.join(f"<tr><td>{html.escape(str((f.get('properties') or {}).get('parcel_id','')))}</td><td>{html.escape(str((f.get('properties') or {}).get('area_sq_m','—')))}</td><td>{html.escape(str((f.get('properties') or {}).get('review_priority','LOW')))}</td><td>{html.escape(str((f.get('properties') or {}).get('review_status','candidate')))}</td></tr>" for f in features)}</table></body></html>"""
-    filename = f"sahinaksha-{survey_id}-report.html"
-    _record_export(survey_id, job["id"], "report", auth, filename)
-    return Response(content=html_body, media_type="text/html; charset=utf-8", headers={"Content-Disposition":f'attachment; filename="{filename}"'})
-
-
+    state,job=_final_export_state(survey_id,auth)
+    data=build_pdf_report(state)
+    filename=f"sahinaksha-{survey_id}-report.pdf"
+    _record_export(survey_id,job["id"],"pdf",auth,filename)
+    return Response(content=data,media_type="application/pdf",headers={"Content-Disposition":f'attachment; filename="{filename}"'})
 # Legacy endpoints retained for the current frontend and existing integrations.
 @router.post("/analyze")
 async def analyze(file: UploadFile = File(...), project_id: str = Form(...), survey_id: str = Form(...), reference_parcels: UploadFile | None = File(None), ground_truth: UploadFile | None = File(None), dsm: UploadFile | None = File(None), auth=Depends(get_current_auth)):
