@@ -1,44 +1,214 @@
 # SahiNaksha API Contract
 
-## 1. Authentication
-All FastAPI application endpoints that access analysis data require Authorization: Bearer <supabase_access_token>.
-The frontend obtains the access token from the active Supabase Auth session and sends it to FastAPI.
-FastAPI validates the token against Supabase Auth, then forwards the same user token to Supabase PostgREST so database RLS evaluates the request as that authenticated user.
+## 1. Base URL and authentication
 
-## 2. POST /analyze
-Authenticated multipart request.
-Required fields: file, project_id, survey_id.
-Optional fields: reference_parcels, ground_truth, dsm.
-The backend verifies that the selected survey belongs to an accessible project.
-The endpoint creates a processing_jobs row, executes the existing AI/GIS pipeline, then persists parcels, PostGIS native geometry, validation issues, the completed result snapshot, and survey status.
+The standardized API is served under `/api`. All project, survey, processing, parcel, validation, review, and export endpoints require:
 
-## 3. Analysis response
-Returned data includes analysis_id, project_id, survey_id, processing_job_id, status, original image URL, and the existing analysis result structures.
+`Authorization: Bearer <supabase_access_token>`
 
-## 4. GET /analysis/{analysis_id}
-Authenticated. Returns an analysis only when its linked survey is accessible to the authenticated user.
+FastAPI validates the Supabase access token and forwards the same user token to Supabase PostgREST so database RLS remains the authorization boundary.
 
-## 5. GET /analysis/{analysis_id}/metrics
-Authenticated. Returns parcel, topology, validation, review-priority, and evaluation metrics.
+Health is public:
 
-## 6. Validation endpoints
-GET /analysis/{analysis_id}/validation supports severity, issue_type, status, and parcel_id filters.
-GET /analysis/{analysis_id}/validation/summary returns validation and review-priority summaries.
-GET /analysis/{analysis_id}/validation/parcels/{parcel_id} returns parcel-specific validation and explainable review information.
+- `GET /api/health`
 
-## 7. GET /analysis/{analysis_id}/export
-Authenticated. Returns GeoJSON and records an exports audit row.
+## 2. Structured errors
 
-## 8. GET /surveys/{survey_id}/latest-result
-Authenticated. Returns the latest completed processing job and its persisted result_snapshot. The frontend uses this to reopen a completed survey after refresh or a new login.
+Errors use this shape for HTTP errors and request validation:
 
-## 9. Direct Supabase operations
-Project/survey CRUD and authoritative review persistence use the Supabase JavaScript client with the authenticated session.
-Review persistence updates the parcels row, stores edited geometry/properties, inserts a reviews history row, and updates PostGIS native geometry through the set_parcel_native_geometry RPC.
+```json
+{
+  "error": {
+    "code": "RESULT_NOT_READY",
+    "message": "No completed processing result exists for this survey.",
+    "details": {}
+  }
+}
+```
 
-## 10. Security
-Typical responses: 400 invalid input, 401 missing/invalid/expired token, 403 unauthorized project/survey, 404 missing resource, 500 processing/persistence failure.
-Never put a Supabase secret/service key in React source, VITE_* variables, Git, browser localStorage, or request bodies. Only the publishable key belongs in the frontend environment.
+Common codes include `VALIDATION_ERROR`, `UNAUTHORIZED`, `PROJECT_NOT_FOUND`, `SURVEY_NOT_FOUND`, `NO_UPLOAD`, `PROCESSING_ACTIVE`, `RESULT_NOT_READY`, `PARCEL_NOT_FOUND`, and `INTERNAL_SERVER_ERROR`.
 
-## 11. Geometry CRS rule
-The current AI output is image-local normalized 0..100 geometry. It is stored in PostGIS with SRID 0 and explicitly labelled LOCAL_IMAGE_0_100. The application does not invent EPSG:4326.
+## 3. Project workflow
+
+### GET /api/projects
+Returns projects accessible to the authenticated user.
+
+### POST /api/projects
+JSON body:
+
+```json
+{"name":"Village Survey","description":"Prototype survey"}
+```
+
+Creates an owned project.
+
+### GET /api/projects/{project_id}
+Returns one accessible project.
+
+### PATCH /api/projects/{project_id}
+JSON body may contain `name` and/or `description`.
+
+## 4. Survey workflow
+
+### GET /api/projects/{project_id}/surveys
+Lists surveys belonging to the project.
+
+### POST /api/projects/{project_id}/surveys
+JSON body:
+
+```json
+{"name":"Orthomosaic Survey 01"}
+```
+
+### GET /api/surveys/{survey_id}
+Returns survey metadata and recent processing jobs.
+
+## 5. Upload
+
+### POST /api/surveys/{survey_id}/upload
+
+Authenticated multipart upload.
+
+Required:
+
+- `file`: JPG/JPEG/PNG orthomosaic image.
+
+Optional:
+
+- `reference_parcels`: GeoJSON/JSON
+- `ground_truth`: GeoJSON/JSON
+- `dsm`: JPG/JPEG/PNG prototype input
+
+The upload endpoint stores files under the survey workspace and updates the survey source image. It does not claim that an uploaded image is georeferenced.
+
+## 6. Processing
+
+### POST /api/surveys/{survey_id}/process
+
+Returns HTTP `202 Accepted` and creates a `processing_jobs` row.
+
+The prototype uses FastAPI BackgroundTasks rather than Celery/Redis. The job state is persisted in Supabase, so the frontend polls the database-backed API rather than relying on in-memory progress.
+
+States:
+
+- `QUEUED`
+- `PROCESSING`
+- `COMPLETED`
+- `FAILED`
+
+The API does **not** fabricate percentage progress. A queued/processing job remains at the actual known progress boundary; completion sets progress to 100.
+
+Each job records:
+
+- `started_at`
+- `completed_at`
+- `status`
+- `error_message`
+- `model_used`
+- `input`
+- `output`
+- `result_snapshot`
+
+### GET /api/surveys/{survey_id}/processing-status
+
+Returns the latest processing job, including state, timestamps, model, input, output, and error.
+
+## 7. Results
+
+### GET /api/surveys/{survey_id}/results
+
+Returns the latest completed persisted analysis result. If processing is not complete, returns a structured `RESULT_NOT_READY` error.
+
+## 8. Parcels
+
+### GET /api/surveys/{survey_id}/parcels
+Returns authoritative persisted parcel records for the survey.
+
+### GET /api/parcels/{parcel_id}
+Returns one parcel after verifying access through its survey/project.
+
+### PATCH /api/parcels/{parcel_id}
+Supports parcel attributes, properties, review fields, and optional GeoJSON geometry.
+
+When geometry is supplied, the backend writes it through `set_parcel_native_geometry` with SRID 0 unless a future georeferenced workflow explicitly supplies another CRS.
+
+## 9. Human review
+
+### POST /api/parcels/{parcel_id}/verify
+
+Body:
+
+```json
+{
+  "decision": "ACCEPT",
+  "comments": "Boundary reviewed",
+  "geometry": null
+}
+```
+
+Allowed decisions:
+
+- `ACCEPT`
+- `NEEDS_REVIEW`
+- `REJECT`
+
+### POST /api/parcels/{parcel_id}/request-field-verification
+
+Records `REQUEST_FIELD_VERIFICATION` and changes the parcel to `Needs Field Survey`.
+
+AI output remains preliminary physical-feature evidence. Human surveyor review is required; these endpoints do not make a legal cadastral determination.
+
+## 10. Validation
+
+### GET /api/surveys/{survey_id}/validation
+
+Optional query parameters:
+
+- `severity`
+- `issue_type`
+- `status`
+- `parcel_id`
+
+Returns persisted validation issues.
+
+## 11. Exports
+
+### GET /api/surveys/{survey_id}/export/geojson
+Downloads the latest result as GeoJSON and overlays persisted human-review edits.
+
+### GET /api/surveys/{survey_id}/export/csv
+Downloads parcel-level attributes and review/validation fields.
+
+### GET /api/surveys/{survey_id}/export/report
+Downloads an HTML survey report summarizing parcels, review status, validation issues, and prototype/legal-status caveats.
+
+Every export creates an `exports` audit row.
+
+## 12. Legacy compatibility endpoints
+
+The existing frontend/integrations remain supported:
+
+- `POST /analyze`
+- `GET /analysis/{analysis_id}`
+- `GET /analysis/{analysis_id}/metrics`
+- `GET /analysis/{analysis_id}/validation`
+- `GET /analysis/{analysis_id}/export`
+- `GET /surveys/{survey_id}/latest-result`
+
+These are compatibility routes; new frontend integrations should use the standardized `/api` workflow.
+
+## 13. CORS
+
+CORS is configured through:
+
+`CORS_ORIGINS=http://localhost:5173,https://your-frontend.example.com`
+
+When `CORS_ORIGINS` is set, those origins are used. Otherwise local Vite origins are allowed.
+
+## 14. Geometry / CRS rule
+
+Current AI output can be image-local normalized 0..100 geometry. It is stored in `geom_native` with SRID 0 and labelled `LOCAL_IMAGE_0_100`. The API does not invent EPSG:4326 or legal cadastral coordinates.
+
+## 15. Security
+
+Never put a Supabase secret/service key in React source, `VITE_*` variables, Git, browser localStorage, or request bodies. The backend uses the authenticated user's access token for RLS-authorized database operations.
