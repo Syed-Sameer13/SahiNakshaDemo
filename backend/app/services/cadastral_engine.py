@@ -419,3 +419,86 @@ def enrich_review_priority(parcels: dict[str, Any]):
         props["review_priority"] = min(100, score)
         props["review_required"] = True
     return parcels
+
+
+def _scale_to_image(point: tuple[float, ...], width: int, height: int) -> tuple[int, int]:
+    x, y = point[:2]
+    if 0 <= x <= 100 and 0 <= y <= 100 and (width > 100 or height > 100):
+        px = int(round(x * width / 100.0))
+        py = int(round((100.0 - y) * height / 100.0))
+    else:
+        px = int(round(x))
+        py = int(round(y))
+    px = max(0, min(width - 1, px))
+    py = max(0, min(height - 1, py))
+    return px, py
+
+
+def classify_parcel_landuse(parcels: dict[str, Any], image_path: str) -> dict[str, Any]:
+    image = cv2.imread(image_path)
+    if image is None:
+        return parcels
+    height, width = image.shape[:2]
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    green = cv2.inRange(hsv, np.array([30, 35, 20]), np.array([95, 255, 255]))
+
+    for feature in parcels.get("features", []):
+        try:
+            geometry = shape(feature["geometry"])
+            mask = np.zeros((height, width), dtype=np.uint8)
+            if geometry.geom_type == "Polygon":
+                pts = [_scale_to_image((x, y), width, height) for x, y in geometry.exterior.coords]
+            elif geometry.geom_type == "MultiPolygon":
+                pts = []
+                for p in geometry.geoms:
+                    pts.extend([_scale_to_image((x, y), width, height) for x, y in p.exterior.coords])
+            else:
+                continue
+            if len(pts) < 3:
+                continue
+            cv2.fillPoly(mask, [np.array(pts, dtype=np.int32)], 255)
+            area = max(1, cv2.countNonZero(mask))
+            green_ratio = cv2.countNonZero(cv2.bitwise_and(mask, green)) / area
+            if green_ratio > 0.60:
+                land_use = "Vegetated/Open"
+            elif green_ratio < 0.18:
+                land_use = "Built-up"
+            else:
+                land_use = "Mixed Urban"
+            feature.setdefault("properties", {})["land_use"] = land_use
+            feature["properties"]["vegetation_ratio"] = round(float(green_ratio), 2)
+        except Exception as exc:
+            logger.debug("Landuse classification skipped for parcel: %s", exc)
+
+    return parcels
+
+
+def classify_parcel_height(parcels: dict[str, Any], dsm_path: str) -> dict[str, Any]:
+    """Attach relative height evidence from an aligned DSM/height raster."""
+    dsm = cv2.imread(dsm_path, cv2.IMREAD_GRAYSCALE)
+    if dsm is None:
+        return parcels
+    height, width = dsm.shape[:2]
+
+    for feature in parcels.get("features", []):
+        try:
+            geometry = shape(feature["geometry"])
+            mask = np.zeros((height, width), dtype=np.uint8)
+            if geometry.geom_type == "Polygon":
+                pts = [_scale_to_image((x, y), width, height) for x, y in geometry.exterior.coords]
+            elif geometry.geom_type == "MultiPolygon":
+                pts = []
+                for p in geometry.geoms:
+                    pts.extend([_scale_to_image((x, y), width, height) for x, y in p.exterior.coords])
+            else:
+                continue
+            if len(pts) < 3:
+                continue
+            cv2.fillPoly(mask, [np.array(pts, dtype=np.int32)], 255)
+            values = dsm[mask > 0]
+            if len(values):
+                feature.setdefault("properties", {})["relative_height_mean"] = round(float(np.mean(values)), 2)
+                feature["properties"]["height_source"] = "aligned_dsm"
+        except Exception as exc:
+            logger.debug("Height classification skipped for parcel: %s", exc)
+    return parcels

@@ -9,6 +9,9 @@ complete the analysis contract and reports the selected model/fallback.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services.analysis import analyze_image
 
