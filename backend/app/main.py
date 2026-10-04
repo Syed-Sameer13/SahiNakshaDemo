@@ -75,7 +75,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
-        content=structured_error("INTERNAL_SERVER_ERROR", "An unexpected server error occurred.", {"type": type(exc).__name__}),
+        content=structured_error("INTERNAL_SERVER_ERROR", str(exc) or "An unexpected server error occurred.", {"type": type(exc).__name__}),
     )
 
 

@@ -384,6 +384,7 @@ def process_survey(survey_id: str, background_tasks: BackgroundTasks, auth=Depen
     directory = image_path.parent
     reference_path = next(iter(directory.glob("reference.*")), None)
     ground_truth_path = next(iter(directory.glob("ground_truth.*")), None)
+    dsm_path = next(iter(directory.glob("dsm.*")), None)
     analysis_id = uuid4().hex
     input_meta = {"orthomosaic": image_path.name, "reference_parcels": reference_path.name if reference_path else None, "ground_truth": ground_truth_path.name if ground_truth_path else None, "dsm": dsm_path.name if dsm_path else None}
     job_payload = {"survey_id": survey_id, "created_by": auth["id"], "analysis_id": analysis_id, "status": "QUEUED", "progress": 0, "stage": "Queued"}
