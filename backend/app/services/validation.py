@@ -5,7 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from shapely.geometry import shape
-from shapely.ops import unary_union
+from shapely.ops import unary_union\nfrom shapely import normalize
 
 
 SEVERITIES = ("INFO", "WARNING", "ERROR", "CRITICAL")
@@ -119,7 +119,7 @@ def validate_parcels(
                                  "Parcel is below the configured minimum area and may be noise.",
                                  {"area": float(geometry.area), "threshold": 25.0}))
 
-        key = geometry.normalize().wkb if hasattr(geometry, "normalize") else geometry.wkb
+        key = normalize(geometry).wkb
         duplicate_keys.setdefault(key, []).append(parcel_id)
         geometries.append((parcel_id, geometry, props))
         props["geometry_valid"] = bool(geometry.is_valid and not geometry.is_empty and geometry.area > 0)
