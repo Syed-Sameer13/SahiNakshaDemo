@@ -41,6 +41,13 @@ export default function App() {
     setView("map");
   };
 
+  const openPersistedSurvey = (selectedProject, selectedSurvey, snapshot) => {
+    setProject(selectedProject);
+    setSurvey(selectedSurvey);
+    setResult(snapshot);
+    setView("map");
+  };
+
   const openPrevious = (analysis) => {
     setProject({ id: analysis.project_id, name: analysis.project_name || "Previous Project" });
     setSurvey({ id: analysis.survey_id, name: analysis.survey_name || "Previous Survey" });
@@ -60,6 +67,7 @@ export default function App() {
       {view === "projects" && (
         <ProjectDashboard
           onStartSurvey={startSurvey}
+          onOpenResults={openPersistedSurvey}
           onSignOut={resetToProjects}
         />
       )}
