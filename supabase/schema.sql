@@ -49,6 +49,7 @@ create table if not exists public.validation_issues (
 -- falsely labelling image-local/projected coordinates as EPSG:4326.
 alter table public.parcels add column if not exists geom_native geometry(Geometry);
 alter table public.parcels add column if not exists geom_crs text;
+alter table public.parcels add column if not exists geometry_crs text;
 alter table public.parcels add column if not exists perimeter_m double precision;
 alter table public.parcels add column if not exists ai_evidence jsonb not null default '{}'::jsonb;
 alter table public.parcels add column if not exists reference_comparison jsonb not null default '{}'::jsonb;
