@@ -62,6 +62,11 @@ class ParcelVerify(BaseModel):
     geometry: dict | None = None
 
 
+class FieldVerificationRequest(BaseModel):
+    comments: str | None = None
+    geometry: dict | None = None
+
+
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -126,9 +131,9 @@ def _latest_job(survey_id: str, access_token: str, completed_only=False):
         "order": "created_at.desc",
         "limit": "1",
     }
-    if completed_only:
-        params["status"] = "eq.COMPLETED"
     rows = supabase_rest("GET", "processing_jobs", access_token, params=params)
+    if completed_only:
+        rows = [row for row in rows if str(row.get("status", "")).upper() == "COMPLETED" and row.get("result_snapshot")]
     return rows[0] if rows else None
 
 
@@ -410,7 +415,7 @@ def verify_parcel(parcel_id: str, body: ParcelVerify, auth=Depends(get_current_a
 
 
 @router.post("/api/parcels/{parcel_id}/request-field-verification")
-def request_field_verification(parcel_id: str, body: ParcelVerify | None = None, auth=Depends(get_current_auth)):
+def request_field_verification(parcel_id: str, body: FieldVerificationRequest | None = None, auth=Depends(get_current_auth)):
     comments = body.comments if body else None
     geometry = body.geometry if body else None
     return _verify_and_record(parcel_id, "REQUEST_FIELD_VERIFICATION", comments, geometry, auth)
