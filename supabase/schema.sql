@@ -258,3 +258,10 @@ with check (
   and exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id
               where s.id = survey_id and p.owner_id = auth.uid())
 );
+
+-- Expose only to signed-in users; RLS remains the authorization boundary.
+revoke all on table public.projects, public.surveys, public.parcels, public.validation_issues,
+  public.processing_jobs, public.reviews, public.exports from anon;
+
+grant select, insert, update, delete on table public.projects, public.surveys, public.parcels,
+  public.validation_issues, public.processing_jobs, public.reviews, public.exports to authenticated;
