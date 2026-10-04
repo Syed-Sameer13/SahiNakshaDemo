@@ -174,15 +174,27 @@ Returns persisted validation issues.
 ## 11. Exports
 
 ### GET /api/surveys/{survey_id}/export/geojson
-Downloads the latest result as GeoJSON and overlays persisted human-review edits.
+Downloads the **final reviewed survey** as GeoJSON. Geometry is read from PostGIS through the security-invoker export RPC at request time; the AI result snapshot is not used as the authoritative geometry source. Each feature includes parcel attributes, review status, validation summary and provenance.
 
 ### GET /api/surveys/{survey_id}/export/csv
-Downloads parcel-level attributes and review/validation fields.
+Downloads the final database-backed parcel state with exactly these columns:
+
+- `parcel_id`
+- `area_sq_m`
+- `perimeter_m`
+- `review_priority`
+- `review_status`
+- `validation_issue_count`
+- `reference_area`
+- `area_difference_percent`
+- `reviewer`
 
 ### GET /api/surveys/{survey_id}/export/report
-Downloads an HTML survey report summarizing parcels, review status, validation issues, and prototype/legal-status caveats.
+Downloads a PDF named `sahinaksha-{survey_id}-report.pdf`.
 
-Every export creates an `exports` audit row.
+The PDF contains SahiNaksha / Preliminary Cadastral Survey Report, project and survey information, processing date, input imagery, CRS, model, parcel summary, validation summary, parcel table, and the mandatory legal-status limitation.
+
+Every export creates an `exports` row and an `audit_events` row.
 
 ## 12. Legacy compatibility endpoints
 
@@ -210,5 +222,36 @@ When `CORS_ORIGINS` is set, those origins are used. Otherwise local Vite origins
 Current AI output can be image-local normalized 0..100 geometry. It is stored in `geom_native` with SRID 0 and labelled `LOCAL_IMAGE_0_100`. The API does not invent EPSG:4326 or legal cadastral coordinates.
 
 ## 15. Security
+
+Never put a Supabase secret/service key in React source, `VITE_*` variables, Git, browser localStorage, or request bodies. The backend uses the authenticated user's access token for RLS-authorized database operations.
+
+
+## 14. Audit trail
+
+The `audit_events` table records lifecycle actions including:
+
+- `upload`
+- `processing_started`
+- `processing_completed`
+- `processing_failed`
+- `parcel_edited`
+- `parcel_verified`
+- `parcel_rejected`
+- `field_verification_requested`
+- `export_generated`
+
+Each event records the authenticated actor, survey, optional parcel/entity, metadata and timestamp. RLS restricts events to the owning project.
+
+## 15. Final export source of truth
+
+Final exports are generated from current Supabase/PostGIS state at request time. The export RPC returns `geom_native` as GeoJSON plus review status, attributes, provenance and reviewer information. Validation issues are queried separately from `validation_issues` and summarized per parcel.
+
+This ensures a geometry edited or a review decision saved after AI processing is reflected in subsequent final exports.
+
+## 16. Geometry / CRS rule
+
+Current AI output can be image-local normalized 0..100 geometry. It is stored in `geom_native` with SRID 0 and labelled `LOCAL_IMAGE_0_100`. The API does not invent EPSG:4326 or legal cadastral coordinates.
+
+## 17. Security
 
 Never put a Supabase secret/service key in React source, `VITE_*` variables, Git, browser localStorage, or request bodies. The backend uses the authenticated user's access token for RLS-authorized database operations.
