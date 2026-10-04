@@ -1,0 +1,9 @@
+{
+  "type":"FeatureCollection",
+  "features":[
+    {"type":"Feature","properties":{"parcel_id":"SYN-001","area_sq_m":1600,"review_status":"Human Verified","review_priority":"LOW","validation_issue_count":0},"geometry":{"type":"Polygon","coordinates":[[[5,5],[45,5],[45,45],[5,45],[5,5]]]}},
+    {"type":"Feature","properties":{"parcel_id":"SYN-002","area_sq_m":1600,"review_status":"Human Verified","review_priority":"LOW","validation_issue_count":0},"geometry":{"type":"Polygon","coordinates":[[[55,5],[95,5],[95,45],[55,45],[55,5]]]}},
+    {"type":"Feature","properties":{"parcel_id":"SYN-003","area_sq_m":1720,"review_status":"Needs Field Survey","review_priority":"MEDIUM","validation_issue_count":1},"geometry":{"type":"Polygon","coordinates":[[[5,55],[48,55],[48,95],[5,95],[5,55]]]}},
+    {"type":"Feature","properties":{"parcel_id":"SYN-004","area_sq_m":1600,"review_status":"Rejected","review_priority":"HIGH","validation_issue_count":1},"geometry":{"type":"Polygon","coordinates":[[[55,55],[95,55],[95,95],[55,95],[55,55]]]}}
+  ]
+}
