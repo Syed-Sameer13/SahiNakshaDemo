@@ -38,7 +38,7 @@ export default function UploadPanel({ project, survey, onComplete, onBack }) {
       setProgress(55); setStage("Processing"); await updateSurvey("processing");
       setProgress(70); setStage("Generating polygons");
       setProgress(82); setStage("Running topology validation");
-      setProgress(92); setStage("Saving results"); await updateSurvey("complete",{source_crs:data.raster_metadata?.crs||null});
+      setProgress(92); setStage("Saving results"); await updateSurvey("complete",{source_crs:data.raster_metadata?.crs||null,source_image_url:data.original_image_url||null});
       setProgress(100); setStage("Complete");
       onComplete({...data,original_image_url:API.replace(/\/$/,"")+data.original_image_url,project_id:project?.id,survey_id:survey?.id,project_name:project?.name,survey_name:survey?.name});
     } catch(e) {
