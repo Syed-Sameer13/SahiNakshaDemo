@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
 
-const API = import.meta.env.VITE_API_URL || "";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 export default function UploadPanel({ project, survey, onComplete, onBack }) {
   const [file, setFile] = useState(null);
@@ -34,10 +34,6 @@ export default function UploadPanel({ project, survey, onComplete, onBack }) {
   async function analyze() {
     if (!file) {
       setError("Please select the required orthomosaic / drone image.");
-      return;
-    }
-    if (!API) {
-      setError("VITE_API_URL is not configured. Set it to the deployed FastAPI base URL.");
       return;
     }
     setError("");

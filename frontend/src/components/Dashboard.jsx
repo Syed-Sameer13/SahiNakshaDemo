@@ -3,7 +3,7 @@ import { MapContainer, ImageOverlay, GeoJSON, Marker, Polyline, Polygon, useMapE
 import { CRS, divIcon } from "leaflet";
 import { supabase } from "../lib/supabase";
 
-const API = import.meta.env.VITE_API_URL || "";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 const BOUNDS = [[0, 0], [100, 100]];
 const STORAGE_PREFIX = "sahinaksha:review:";
 
