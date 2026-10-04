@@ -78,7 +78,7 @@ create table if not exists public.processing_jobs (
   stage text,
   error_message text,
   result_snapshot jsonb,
-  started_at timestamptz,
+  started_at timestamptz not null default now(),
   completed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
