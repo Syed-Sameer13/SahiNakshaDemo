@@ -5,7 +5,7 @@ function shell(content) {
   return <main className="gov-portal"><div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div><div className="gov-tools"><span>Accessibility</span><span>हिन्दी</span><span>English</span></div></div><header className="gov-header"><div className="gov-brand"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/120px-Government_of_India_logo.svg.png" alt="Government of India emblem"/><div><div className="gov-hindi">ग्रामीण विकास मंत्रालय</div><div className="gov-title">MINISTRY OF RURAL DEVELOPMENT</div><div className="gov-subtitle">GOVERNMENT OF INDIA</div></div></div><div className="sahinaksha-brand"><strong>SahiNaksha</strong><span>AI-Assisted Cadastral Mapping</span></div></header><div className="gov-notice"><b>Prototype Portal</b> — SIH 2026 demonstration system; not an official Government of India service.</div>{content}<footer className="gov-footer"><div><b>Government of India</b><br/>Ministry of Rural Development • SahiNaksha Demonstration Portal</div><div>Privacy Policy &nbsp;|&nbsp; Accessibility &nbsp;|&nbsp; Contact</div></footer></main>;
 }
 
-export default function ProjectDashboard({ onStartSurvey }) {
+export default function ProjectDashboard({ onStartSurvey, onOpenResults }) {
   const [projects, setProjects] = useState([]);
   const [surveys, setSurveys] = useState([]);
   const [selectedProject, setSelectedProject] = useState(null);
@@ -46,6 +46,25 @@ export default function ProjectDashboard({ onStartSurvey }) {
     if (surveyError) setError(surveyError.message); else setSurveys(data || []);
   }
 
+  async function openPersistedResults(survey) {
+    setError(""); setMessage("");
+    try {
+      const { data, error: jobError } = await supabase
+        .from("processing_jobs")
+        .select("id,analysis_id,status,result_snapshot,created_at,completed_at")
+        .eq("survey_id", survey.id)
+        .eq("status", "completed")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (jobError) throw jobError;
+      if (!data?.result_snapshot) throw new Error("No persisted processing result is available for this survey.");
+      onOpenResults(selectedProject, survey, data.result_snapshot);
+    } catch (e) {
+      setError(e.message || "Unable to load persisted survey results.");
+    }
+  }
+
   async function createSurvey(e) {
     e.preventDefault(); if (!selectedProject) return;
     setError(""); setMessage("");
@@ -80,7 +99,10 @@ export default function ProjectDashboard({ onStartSurvey }) {
       {selectedProject && <section style={{marginTop:"20px"}}><div className="workflow-heading"><span>02 • SURVEY</span><h2>{selectedProject.name}</h2><p>Create or open a survey workspace.</p></div>
         <div style={{display:"grid",gridTemplateColumns:"minmax(280px,360px) 1fr",gap:"18px"}}>
           <form className="upload-card" onSubmit={createSurvey}><h3>Create Survey</h3><label className="file-picker"><span>Survey name</span><input required value={surveyName} onChange={e=>setSurveyName(e.target.value)} placeholder="Orthomosaic survey"/></label><button className="primary-button">Create Survey</button></form>
-          <div className="upload-card"><h3>Surveys</h3>{surveys.length===0?<p className="muted">No surveys created for this project.</p>:surveys.map(s=><div className="previous-item" key={s.id}><div className="previous-item-main"><strong>{s.name}</strong><span>Status: {s.status}</span><small>Created {new Date(s.created_at).toLocaleString()}</small></div><button className="primary-button compact" type="button" onClick={()=>onStartSurvey(selectedProject,s)}>Upload &amp; Process</button></div>)}</div>
+          <div className="upload-card"><h3>Surveys</h3>{surveys.length===0?<p className="muted">No surveys created for this project.</p>:surveys.map(s=><div className="previous-item" key={s.id}><div className="previous-item-main"><strong>{s.name}</strong><span>Status: {s.status}</span><small>Created {new Date(s.created_at).toLocaleString()}</small></div><div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
+              <button className="primary-button compact" type="button" onClick={()=>onStartSurvey(selectedProject,s)}>Upload &amp; Process</button>
+              {s.status==="complete"&&<button className="secondary-button compact" type="button" onClick={()=>openPersistedResults(s)}>Open Saved Results</button>}
+            </div></div>)}</div>
         </div>
       </section>}
     </section>
