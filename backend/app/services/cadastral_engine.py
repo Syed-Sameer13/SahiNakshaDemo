@@ -13,8 +13,8 @@ from typing import Any
 
 import cv2
 import numpy as np
-from shapely.geometry import box, mapping, shape
-from shapely.ops import transform as shapely_transform, unary_union
+from shapely.geometry import box, mapping, shape, Polygon, MultiPoint
+from shapely.ops import transform as shapely_transform, unary_union, voronoi_diagram
 from pyproj import CRS, Transformer
 
 from .geojson_service import feature_collection
@@ -273,41 +273,94 @@ def generate_candidate_parcels(ai_result: dict[str, Any], reference_parcels: dic
     if not buildings:
         return feature_collection([])
 
-    # A convex hull of nearby building evidence is intentionally a coarse block candidate.
-    # It is never called a legal parcel.
+    building_geoms = []
+    building_props = []
+    for f in buildings:
+        g = _repair_geometry(shape(f["geometry"]))
+        if g is not None and not g.is_empty:
+            building_geoms.append(g)
+            building_props.append(f.get("properties", {}))
+
+    if not building_geoms:
+        return feature_collection([])
+
+    roads = (ai_result.get("roads") or {}).get("features", [])
+    road_geoms = []
+    for r in roads:
+        try:
+            rg = _repair_geometry(shape(r["geometry"]))
+            if rg is not None and not rg.is_empty:
+                road_geoms.append(rg.buffer(1.2))
+        except Exception:
+            pass
+
+    road_union = unary_union(road_geoms) if road_geoms else Polygon()
+    frame = box(0, 0, 100, 100)
+    try:
+        free_land = frame.difference(road_union)
+    except Exception:
+        free_land = frame
+
     candidates = []
-    used = set()
-    for i, feature in enumerate(buildings, start=1):
-        if i in used:
-            continue
-        geom = _repair_geometry(shape(feature["geometry"]))
-        if geom is None:
-            continue
-        group = [geom]
-        used.add(i)
-        for j, other in enumerate(buildings, start=1):
-            if j in used:
-                continue
-            other_geom = _repair_geometry(shape(other["geometry"]))
-            if other_geom and geom.distance(other_geom) <= 8.0:
-                group.append(other_geom)
-                used.add(j)
-        block = _repair_geometry(unary_union(group).convex_hull)
-        if block is None:
-            continue
-        candidates.append({
-            "type": "Feature",
-            "geometry": mapping(block),
-            "properties": {
-                "parcel_id": f"C-{len(candidates)+1:03d}",
-                "source": "ai_feature_evidence_block",
-                "reference_available": False,
-                "candidate_type": "preliminary_evidence_block",
-                "ai_evidence": "building_footprints_grouped",
-                "review_required": True,
-                "legal_cadastral_boundary": False,
-            },
-        })
+    if len(building_geoms) > 1:
+        try:
+            centroids = [b.centroid for b in building_geoms]
+            mp = MultiPoint(centroids)
+            vor = voronoi_diagram(mp, envelope=frame)
+            cells = list(vor.geoms) if hasattr(vor, "geoms") else [vor]
+            
+            for idx, (b_geom, b_prop) in enumerate(zip(building_geoms, building_props), start=1):
+                c = b_geom.centroid
+                matched_cell = None
+                for cell in cells:
+                    if cell.contains(c) or cell.intersects(c):
+                        matched_cell = cell
+                        break
+                
+                compound = b_geom.buffer(6.0)
+                if matched_cell is not None:
+                    plot = compound.union(b_geom.buffer(2.0)).intersection(matched_cell)
+                else:
+                    plot = compound
+                
+                plot = plot.intersection(free_land)
+                plot = _repair_geometry(plot)
+                if plot is not None and not plot.is_empty and plot.area >= 0.5:
+                    simplified = plot.simplify(0.18, preserve_topology=True)
+                    candidates.append({
+                        "type": "Feature",
+                        "geometry": mapping(simplified),
+                        "properties": {
+                            "parcel_id": f"P-{idx:03d}",
+                            "source": "ai_compound_boundary_synthesis",
+                            "reference_available": False,
+                            "candidate_type": "compound_property_plot",
+                            "assigned_building": b_prop.get("building_id", f"B-{idx:03d}"),
+                            "review_required": True,
+                            "legal_cadastral_boundary": False,
+                        }
+                    })
+        except Exception as exc:
+            logger.warning("Voronoi compound synthesis fallback: %s", exc)
+
+    if not candidates:
+        for idx, (b_geom, b_prop) in enumerate(zip(building_geoms, building_props), start=1):
+            plot = _repair_geometry(b_geom.buffer(5.0).intersection(free_land))
+            if plot is not None and not plot.is_empty:
+                candidates.append({
+                    "type": "Feature",
+                    "geometry": mapping(plot.simplify(0.18, preserve_topology=True)),
+                    "properties": {
+                        "parcel_id": f"P-{idx:03d}",
+                        "source": "ai_compound_boundary_synthesis",
+                        "reference_available": False,
+                        "candidate_type": "compound_property_plot",
+                        "assigned_building": b_prop.get("building_id", f"B-{idx:03d}"),
+                        "review_required": True,
+                        "legal_cadastral_boundary": False,
+                    }
+                })
+
     return feature_collection(candidates)
 
 

@@ -98,22 +98,39 @@ def _windows(height: int, width: int, stride: int):
 
 def _polygon_features(mask: np.ndarray, width: int, height: int, prefix: str, feature_type: str, min_area: int = 150):
     binary = (mask.astype(np.uint8) * 255)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     features = []
     for idx, contour in enumerate(contours, 1):
         area = cv2.contourArea(contour)
         if area < min_area:
             continue
-        perimeter = cv2.arcLength(contour, True)
-        approx = cv2.approxPolyDP(contour, max(1.0, 0.008 * perimeter), True)
-        if len(approx) < 4:
-            continue
-        points = []
-        for p in approx[:, 0, :]:
-            x, y = float(p[0]), float(p[1])
-            points.append([round(x * 100.0 / width, 3), round(100.0 - y * 100.0 / height, 3)])
-        if points[0] != points[-1]:
-            points.append(points[0])
+        
+        rect = cv2.minAreaRect(contour)
+        box_pts = cv2.boxPoints(rect)
+        box_area = cv2.contourArea(box_pts)
+        rectangularity = area / max(box_area, 1e-6) if box_area > 0 else 0
+        
+        if rectangularity >= 0.70 and feature_type == "building_footprint":
+            points = []
+            for p in box_pts:
+                x, y = float(p[0]), float(p[1])
+                points.append([round(float(np.clip(x * 100.0 / width, 0, 100)), 3), round(float(np.clip(100.0 - y * 100.0 / height, 0, 100)), 3)])
+            if points[0] != points[-1]:
+                points.append(points[0])
+        else:
+            perimeter = cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, max(1.0, 0.015 * perimeter), True)
+            if len(approx) < 3:
+                approx = cv2.approxPolyDP(contour, max(0.6, 0.008 * perimeter), True)
+            points = []
+            for p in approx[:, 0, :]:
+                x, y = float(p[0]), float(p[1])
+                points.append([round(float(np.clip(x * 100.0 / width, 0, 100)), 3), round(float(np.clip(100.0 - y * 100.0 / height, 0, 100)), 3)])
+            if points[0] != points[-1]:
+                points.append(points[0])
+                
         if len(points) < 4:
             continue
         features.append({
