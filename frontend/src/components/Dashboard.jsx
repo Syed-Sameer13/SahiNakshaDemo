@@ -607,11 +607,11 @@ export default function Dashboard({ result, project, survey, onBack, onReset }) 
       <section className="editor-banner">
         <div>
           <b>📐 Interactive Boundary Editor</b>
-          <span style={{ display: "block", marginTop: "2px" }}>Click features on the map to inspect, edit vertices, draw new parcels, or record surveyor review decisions.</span>
+          <span style={{ display: "block", marginTop: "2px" }}>Select a parcel to edit its boundary vertices. Buildings and roads can be inspected; parcel geometry changes are persisted to PostGIS.</span>
         </div>
         <div className="editor-tools">
-          <button className={editing ? "primary-button" : "secondary-button"} disabled={!current || finalMap} onClick={() => setEditing(v => !v)}>
-            {editing ? "✓ Done Editing" : "✏️ Edit Boundary"}
+          <button className={editing ? "primary-button" : "secondary-button"} disabled={!current || featureType(current) !== "parcel" || current.geometry?.type !== "Polygon" || finalMap} onClick={() => setEditing(v => !v)}>
+            {editing ? "✓ Done Editing" : "✏️ Edit Parcel Boundary"}
           </button>
           <button className="secondary-button" disabled={!editing} onClick={addVertex}>
             ➕ Add Vertex
