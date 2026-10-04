@@ -2,50 +2,46 @@
 
 ## Current limitations
 
-1. SahiNaksha provides preliminary physical-feature and cadastral-candidate evidence. It does not determine legal ownership, title, or authoritative cadastral boundaries.
-2. Building footprints are physical structures and must never be interpreted automatically as legal parcel boundaries.
-3. Review priority is a deterministic triage indicator. It is not AI accuracy, confidence, probability of error, or a legal risk score.
-4. Model confidence is used only when an installed model actually provides a numeric confidence signal. The system does not invent confidence for fallback or heuristic processing.
-5. Boundary evidence is evaluated only when a measurable numeric signal is available.
-6. Missing CRS prevents reliable real-world area/perimeter reporting.
-7. Reference GIS may be outdated, incomplete, or inaccurate.
-8. Reference mismatch does not prove that the candidate is wrong; it identifies a condition requiring investigation.
-9. Gap detection depends on having a usable reference framework.
-10. RGB imagery can be affected by shadows, occlusion, vegetation, roofs, image seams, resolution, and capture conditions.
-11. GeoJSON reference input is supported by the current cadastral loader; Shapefile and GeoPackage are not silently treated as implemented.
-12. The current API upload path accepts JPG/JPEG/PNG imagery. GeoTIFF support requires explicit upload and processing integration.
-13. Automated validation can identify geometric inconsistencies, but it cannot replace field verification.
+1. SahiNaksha produces preliminary physical-feature and cadastral-candidate evidence. It does not determine legal ownership, title, or authoritative cadastral boundaries.
+2. AI-generated boundaries are preliminary and require surveyor verification. They must not be interpreted as legally authoritative cadastral boundaries.
+3. Final exports are generated from the current Supabase/PostGIS reviewed state, but legal authority still depends on authoritative survey/cadastral data and human approval.
+4. Without reliable georeferencing/CRS, real-world area and perimeter cannot be claimed.
+5. Reference GIS can be outdated, incomplete, inaccurate, or differently aligned.
+6. Reference mismatch identifies a condition for investigation; it does not prove that AI geometry is wrong.
+7. RGB imagery is affected by shadows, occlusion, vegetation, roofs, seams, resolution and capture conditions.
+8. Current upload accepts JPG/JPEG/PNG imagery. GeoTIFF requires explicit ingestion and georeferencing integration.
+9. Current reference ingestion supports GeoJSON/JSON; Shapefile and GeoPackage are not silently treated as implemented.
+10. FastAPI BackgroundTasks is suitable for the prototype but is not a durable distributed job system. Production should use a durable worker/queue architecture.
+11. Audit events are database-backed and project-scoped. Production should add immutable/append-only controls, retention policy, actor roles and centralized monitoring.
+12. PDF reporting is a survey review report for the prototype. It is not a government-certified cadastral document.
+13. Synthetic demo data is not evidence of model accuracy.
 
-## Explainable review design
+## Output and reporting
 
-Each issue stores the evidence used to create it. Reviewers can filter issues by severity and inspect parcel-level reasons.
-
-The review-risk indicator is deterministic. Validation severity, invalid geometry, reference mismatch, measured area discrepancy, measured boundary displacement, weak boundary evidence, and genuinely supplied model confidence each contribute bounded, documented review points.
-
-The resulting priority is LOW, MEDIUM, HIGH, or CRITICAL. This ranking is for surveyor triage only.
+- GeoJSON reads final parcel geometry from PostGIS through a security-invoker export RPC.
+- CSV and PDF are built from the same database parcel, validation, survey and processing state at export time.
+- GeoJSON includes parcel attributes, review status, validation summary and provenance metadata.
+- CSV contains parcel ID, area, perimeter, review priority/status, validation issue count, reference area, area difference and reviewer.
+- PDF contains project/survey information, processing details, summary, validation summary, parcel table and the required legal-status limitation.
+- Reviewer identity is currently represented by the authenticated reviewer UUID. A production system can add a surveyor profile/display-name table.
+- Audit events cover upload, processing started/completed/failed, parcel edit, parcel verification/rejection, field-verification requests and export generation.
 
 ## Future scope
 
-### Stronger geospatial ingestion
+### Geospatial production support
+GeoTIFF/COG ingestion, CRS validation, datum/unit handling, ground-control points, Shapefile/GeoPackage support and authoritative coordinate transformations.
 
-GeoTIFF orthomosaic upload with CRS validation; Shapefile/GeoPackage ingestion; ground-control-point workflows; explicit datum and unit handling.
+### Model quality
+Calibrated boundary models, stronger DINOv3/HOTOSM/SAM fusion, regional training datasets, uncertainty calibration and held-out accuracy evaluation.
 
-### Better boundary evidence
+### Review and governance
+Surveyor roles, assignments, immutable audit logs, evidence attachments, approval workflows, digital signatures and role-based export permissions.
 
-Learned boundary/edge models; stronger DINOv3/HOTOSM evidence; SAM refinement with calibrated source metrics; wall, fence, road-edge and terrain-boundary evidence; multi-source evidence fusion.
+### Scalable processing
+Durable worker queues, object storage, resumable uploads, retry policies, distributed processing and monitoring.
 
-### Review workflow
+### Reporting
+Official templates, configurable project rules, multilingual reports, signed PDFs, map layouts, QR verification and export versioning.
 
-Authenticated surveyor roles; server-side issue and review persistence; assignment queues; comments and evidence attachments; audit logs; parcel-by-parcel review sessions.
-
-### Validation quality
-
-Configurable thresholds per project; stronger gap/coverage analysis; topology rule configuration; spatial indexing for large datasets; calibrated evaluation against authoritative reference datasets.
-
-### Accuracy evaluation
-
-IoU and boundary-distance distributions; precision/recall for physical feature detection; held-out regional datasets; uncertainty calibration where model probabilities are genuinely available.
-
-### Production hardening
-
-Background processing for large orthomosaics; object storage; database-backed analysis jobs; authenticated API access; monitoring; structured logs; rate limiting; upload security.
+### Validation
+Configurable thresholds, stronger topology/coverage analysis, spatial indexing and automated comparison against authoritative reference datasets.
