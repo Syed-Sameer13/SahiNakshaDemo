@@ -216,7 +216,7 @@ def _extract_roads(image, edges, vegetation, buildings):
 
     roads = []
     candidates = []
-    for x1, y1, x2, y2 in lines[:, 0, :].tolist():
+    for x1, y1, x2, y2 in lines.reshape(-1, 4).tolist():
         length = float(np.hypot(x2 - x1, y2 - y1))
         if length < min_length:
             continue

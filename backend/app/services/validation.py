@@ -39,7 +39,16 @@ def _issue(
 def _geometry(feature: dict[str, Any]):
     try:
         geometry = feature.get("geometry")
-        return shape(geometry) if geometry else None
+        if not geometry:
+            return None
+        geom = shape(geometry)
+        if not geom.is_valid:
+            try:
+                from shapely.validation import make_valid
+                geom = make_valid(geom)
+            except Exception:
+                geom = geom.buffer(0)
+        return geom
     except Exception:
         return None
 
@@ -240,11 +249,15 @@ def validate_parcels(
         building_geom = _geometry(building)
         if building_geom is None or building_geom.is_empty:
             continue
-        containing = [
-            (parcel_id, parcel_geom.intersection(building_geom).area / building_geom.area)
-            for parcel_id, parcel_geom, _ in geometries
-            if not parcel_geom.is_empty and parcel_geom.intersects(building_geom)
-        ]
+        containing = []
+        for parcel_id, parcel_geom, _ in geometries:
+            if not parcel_geom.is_empty:
+                try:
+                    if parcel_geom.intersects(building_geom):
+                        inter_area = parcel_geom.intersection(building_geom).area
+                        containing.append((parcel_id, inter_area / max(building_geom.area, 1e-6)))
+                except Exception:
+                    pass
         if not containing:
             nearest_id = min(geometries, key=lambda item: item[1].distance(building_geom))[0] if geometries else "UNASSIGNED"
             issues.append(_issue(

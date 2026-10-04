@@ -273,7 +273,7 @@ def _extract_roads(image, vegetation):
         return feature_collection([])
 
     features = []
-    for x1, y1, x2, y2 in sorted(lines[:, 0, :].tolist(), key=lambda p: np.hypot(p[2]-p[0], p[3]-p[1]), reverse=True):
+    for x1, y1, x2, y2 in sorted(lines.reshape(-1, 4).tolist(), key=lambda p: np.hypot(p[2]-p[0], p[3]-p[1]), reverse=True):
         length = float(np.hypot(x2-x1, y2-y1))
         if length < min_length:
             continue
