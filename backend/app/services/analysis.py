@@ -42,19 +42,27 @@ def analyze_image(
 
     result["parcels"] = generate_candidate_parcels(result, reference_result)
     if reference_result and reference_result.get("features"):
-        result["parcels"] = compare_to_references(result["parcels"], reference_result)
         result["cadastral_mode"] = "reference_gis_plus_ai_evidence"
     else:
         result["cadastral_mode"] = "preliminary_ai_evidence_candidates"
 
     result.setdefault("parcels", {"type": "FeatureCollection", "features": []})
     result["parcels"], topology_stats = repair_and_validate_parcels(result["parcels"])
+
+    # Compare cleaned candidate geometry to the reference so review evidence
+    # reflects the geometry that the surveyor actually receives.
+    if reference_result and reference_result.get("features"):
+        result["parcels"] = compare_to_references(result["parcels"], reference_result)
     result["parcels"] = classify_parcel_landuse(result["parcels"], image_path)
 
     if dsm_path:
         result["parcels"] = classify_parcel_height(result["parcels"], dsm_path)
 
-    result["validation"] = validate_parcels(result["parcels"])
+    result["validation"] = validate_parcels(
+        result["parcels"],
+        buildings=result.get("buildings"),
+        reference_parcels=reference_result,
+    )
     source_crs = result["parcels"].get("source_crs") if isinstance(result.get("parcels"), dict) else None
     result["parcels"] = enrich_feature_areas(result["parcels"], source_crs)
     result["parcels"] = enrich_cadastral_metrics(result["parcels"], result["parcels"].get("source_crs") or raster_metadata.get("crs"))
