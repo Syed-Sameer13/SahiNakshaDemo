@@ -6,7 +6,7 @@ from .services.supabase_client import supabase_auth_user
 bearer = HTTPBearer(auto_error=False)
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+def get_current_auth(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required.")
     try:
@@ -15,4 +15,12 @@ def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     if not user.get("id"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authenticated user ID is missing.")
-    return {"id": user["id"], "email": user.get("email")}
+    return {
+        "id": user["id"],
+        "email": user.get("email"),
+        "access_token": credentials.credentials,
+    }
+
+
+def get_current_user(auth=Depends(get_current_auth)):
+    return {"id": auth["id"], "email": auth.get("email")}
