@@ -21,14 +21,29 @@ _SESSION_PATH = None
 
 
 def model_path() -> Path:
-    return Path(os.getenv("SAHINAKSHA_HOTOSM_MODEL", str(MODEL_DEFAULT)))
+    """Resolve the HOTOSM ONNX artifact without silently pretending it exists."""
+    configured = os.getenv("SAHINAKSHA_HOTOSM_MODEL")
+    candidates = [
+        Path(configured) if configured else None,
+        MODEL_DEFAULT,
+        Path(__file__).resolve().parents[2] / "models" / "model.onnx",
+        Path.home() / ".cache" / "sahinaksha" / "hotosm_dinov3s_buildings.onnx",
+    ]
+    for candidate in candidates:
+        if candidate and candidate.is_file() and candidate.stat().st_size >= 128:
+            return candidate
+    return MODEL_DEFAULT
 
 
 def _session():
     global _SESSION, _SESSION_PATH
     path = model_path()
-    if not path.exists():
-        return None, f"HOTOSM model missing: {path}"
+    if not path.exists() or path.stat().st_size < 128:
+        return None, (
+            f"HOTOSM model missing or invalid: {path}. "
+            "Download hotosm/dinov3s-buildings model.onnx and set "
+            "SAHINAKSHA_HOTOSM_MODEL to its path."
+        )
     if _SESSION is not None and _SESSION_PATH == str(path):
         return _SESSION, "ready"
     try:
