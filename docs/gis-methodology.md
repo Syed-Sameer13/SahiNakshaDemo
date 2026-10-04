@@ -85,3 +85,65 @@ Review priority increases for invalid geometry, major reference discrepancy, low
 backend/tests/test_cadastral_engine.py covers valid polygons, invalid polygons, overlaps, empty geometry, missing CRS, geographic CRS, projected CRS, pixel/map round trips, and explicit non-legal AI candidate blocks.
 
 Passing these tests demonstrates computational behavior, not cadastral accuracy.
+
+## Validation and explainable review
+
+Validation is evidence-based and deterministic. It is intended to help a surveyor decide which parcel candidates deserve attention first.
+
+The validation layer checks:
+
+1. geometry validity
+2. self-intersection
+3. polygon overlap
+4. duplicate geometry
+5. tiny/noise polygons
+6. gaps against a usable reference framework
+7. area mismatch
+8. building evidence outside candidate parcel coverage
+9. candidate geometry outside the matched reference boundary
+10. reference mismatch
+11. weak boundary evidence when a numeric signal is actually available
+
+Every issue contains an issue ID, parcel ID, issue type, severity, description, evidence, status, and UTC creation timestamp.
+
+Severity levels are INFO, WARNING, ERROR, and CRITICAL. They describe the urgency of review, not the probability that geometry is wrong.
+
+### Review priority
+
+The review-risk indicator is a deterministic triage score. It can use:
+
+- validation issue severity and count
+- geometry validity
+- reference discrepancy
+- measured area discrepancy
+- measured boundary displacement
+- weak boundary evidence when measurable
+- model confidence only when a real model provider supplies it
+
+The output priority is LOW, MEDIUM, HIGH, or CRITICAL. Each contribution is retained in review_evidence and review_reasons so a surveyor can see why a parcel was prioritized.
+
+Example:
+
+Review Priority: HIGH
+
+Reasons:
+- Area differs from reference by 14.2%
+- Boundary displacement detected
+- One ERROR validation issue
+- AI boundary evidence is weak
+
+This is a review-priority indicator, not a statement such as “14.2% probability of being wrong.”
+
+### API review workflow
+
+The API exposes:
+
+- GET /analysis/{analysis_id}/validation for filtered issue lists
+- GET /analysis/{analysis_id}/validation/summary for project-level severity and review-priority counts
+- GET /analysis/{analysis_id}/validation/parcels/{parcel_id} for one parcel's validation and review explanation
+
+Supported issue filters are severity, issue type, status, and parcel ID.
+
+The frontend surfaces geometry validity, warning/error/critical counts, issue evidence, parcel-level reasons, review priority, and the action “Surveyor Review Required.”
+
+AI confidence is never fabricated. Missing confidence remains missing.
