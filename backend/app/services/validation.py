@@ -5,7 +5,8 @@ from typing import Any
 from uuid import uuid4
 
 from shapely.geometry import shape
-from shapely.ops import unary_union\nfrom shapely import normalize
+from shapely.ops import unary_union
+from shapely import normalize
 
 
 SEVERITIES = ("INFO", "WARNING", "ERROR", "CRITICAL")
