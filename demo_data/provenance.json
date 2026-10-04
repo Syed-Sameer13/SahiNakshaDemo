@@ -1,0 +1,11 @@
+{
+  "dataset_name":"SahiNaksha Synthetic Demo Survey v1",
+  "synthetic":true,
+  "source":"Generated for SahiNaksha prototype demonstration; no real cadastral or personal data.",
+  "coordinate_space":"LOCAL_IMAGE_0_100",
+  "raster":"sample_orthomosaic.ppm, tiny P3 RGB synthetic raster",
+  "reference_layer":"reference_parcels.geojson",
+  "expected_output":"expected_final_output.geojson",
+  "purpose":"Reproducible end-to-end upload, processing, validation, human review and export demo.",
+  "legal_status":"Not suitable for cadastral, legal, ownership, or surveying decisions."
+}
