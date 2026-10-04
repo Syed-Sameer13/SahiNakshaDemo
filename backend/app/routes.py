@@ -184,7 +184,6 @@ async def analyze(
             "status": "running",
             "progress": 10,
             "stage": "Processing",
-            "started_at": "now()",
         },
         prefer="return=representation",
     )
@@ -219,7 +218,6 @@ async def analyze(
             "progress": 100,
             "stage": "Complete",
             "result_snapshot": payload,
-            "completed_at": "now()",
         })
         supabase_rest(
             "PATCH",
