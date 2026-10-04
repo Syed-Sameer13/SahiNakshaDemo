@@ -93,3 +93,7 @@ as $$
 $$;
 
 grant execute on function public.get_survey_export_rows(uuid) to authenticated;
+
+
+revoke all on table public.audit_events from anon;
+grant select, insert, update, delete on table public.audit_events to authenticated;
