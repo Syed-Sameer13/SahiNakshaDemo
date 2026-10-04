@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
+const API = import.meta.env.VITE_API_URL || "";
+
 function shell(content) {
   return <main className="gov-portal"><div className="gov-top-strip"><div>भारत सरकार &nbsp;|&nbsp; Government of India</div><div className="gov-tools"><span>Accessibility</span><span>हिन्दी</span><span>English</span></div></div><header className="gov-header"><div className="gov-brand"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Government_of_India_logo.svg/120px-Government_of_India_logo.svg.png" alt="Government of India emblem"/><div><div className="gov-hindi">ग्रामीण विकास मंत्रालय</div><div className="gov-title">MINISTRY OF RURAL DEVELOPMENT</div><div className="gov-subtitle">GOVERNMENT OF INDIA</div></div></div><div className="sahinaksha-brand"><strong>SahiNaksha</strong><span>AI-Assisted Cadastral Mapping</span></div></header><div className="gov-notice"><b>Prototype Portal</b> — SIH 2026 demonstration system; not an official Government of India service.</div>{content}<footer className="gov-footer"><div><b>Government of India</b><br/>Ministry of Rural Development • SahiNaksha Demonstration Portal</div><div>Privacy Policy &nbsp;|&nbsp; Accessibility &nbsp;|&nbsp; Contact</div></footer></main>;
 }
@@ -59,7 +61,7 @@ export default function ProjectDashboard({ onStartSurvey, onOpenResults }) {
         .maybeSingle();
       if (jobError) throw jobError;
       if (!data?.result_snapshot) throw new Error("No persisted processing result is available for this survey.");
-      onOpenResults(selectedProject, survey, data.result_snapshot);
+      onOpenResults(selectedProject, survey, {...data.result_snapshot,original_image_url:(data.result_snapshot.original_image_url||"").startsWith("http")?data.result_snapshot.original_image_url:API.replace(/\/$/,"")+(data.result_snapshot.original_image_url||"")});
     } catch (e) {
       setError(e.message || "Unable to load persisted survey results.");
     }
