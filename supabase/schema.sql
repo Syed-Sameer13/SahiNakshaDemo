@@ -1,5 +1,5 @@
 -- SahiNaksha Supabase/PostGIS foundation.
--- Additive migration: preserves the existing projects/surveys/parcels/validation_issues tables.
+-- Additive migration: preserves existing application tables and data.
 
 create extension if not exists postgis;
 
@@ -45,8 +45,6 @@ create table if not exists public.validation_issues (
   created_at timestamptz not null default now()
 );
 
--- Additive parcel fields: native geometry keeps the source CRS instead of
--- falsely labelling image-local/projected coordinates as EPSG:4326.
 alter table public.parcels add column if not exists geom_native geometry(Geometry);
 alter table public.parcels add column if not exists geom_crs text;
 alter table public.parcels add column if not exists geometry_crs text;
@@ -62,11 +60,8 @@ alter table public.validation_issues add column if not exists evidence jsonb not
 alter table public.validation_issues add column if not exists status text not null default 'OPEN';
 alter table public.validation_issues add column if not exists updated_at timestamptz not null default now();
 
-create unique index if not exists parcels_survey_parcel_unique
-  on public.parcels(survey_id, parcel_id);
-
-create index if not exists parcels_geom_native_gist
-  on public.parcels using gist(geom_native);
+create unique index if not exists parcels_survey_parcel_unique on public.parcels(survey_id, parcel_id);
+create index if not exists parcels_geom_native_gist on public.parcels using gist(geom_native);
 
 create table if not exists public.processing_jobs (
   id uuid primary key default gen_random_uuid(),
@@ -77,6 +72,9 @@ create table if not exists public.processing_jobs (
   progress integer not null default 0 check (progress between 0 and 100),
   stage text,
   error_message text,
+  model_used text,
+  input jsonb not null default '{}'::jsonb,
+  output jsonb not null default '{}'::jsonb,
   result_snapshot jsonb,
   started_at timestamptz not null default now(),
   completed_at timestamptz,
@@ -84,8 +82,11 @@ create table if not exists public.processing_jobs (
   updated_at timestamptz not null default now()
 );
 
-create index if not exists processing_jobs_survey_created_idx
-  on public.processing_jobs(survey_id, created_at desc);
+alter table public.processing_jobs add column if not exists model_used text;
+alter table public.processing_jobs add column if not exists input jsonb not null default '{}'::jsonb;
+alter table public.processing_jobs add column if not exists output jsonb not null default '{}'::jsonb;
+
+create index if not exists processing_jobs_survey_created_idx on public.processing_jobs(survey_id, created_at desc);
 
 create table if not exists public.reviews (
   id uuid primary key default gen_random_uuid(),
@@ -101,8 +102,7 @@ create table if not exists public.reviews (
   created_at timestamptz not null default now()
 );
 
-create index if not exists reviews_survey_parcel_idx
-  on public.reviews(survey_id, parcel_id, created_at desc);
+create index if not exists reviews_survey_parcel_idx on public.reviews(survey_id, parcel_id, created_at desc);
 
 create table if not exists public.exports (
   id uuid primary key default gen_random_uuid(),
@@ -117,13 +117,10 @@ create table if not exists public.exports (
   created_at timestamptz not null default now()
 );
 
-create index if not exists exports_survey_created_idx
-  on public.exports(survey_id, created_at desc);
+create index if not exists exports_survey_created_idx on public.exports(survey_id, created_at desc);
 
 create or replace function public.set_sahinaksha_updated_at()
-returns trigger
-language plpgsql
-as $$
+returns trigger language plpgsql as $$
 begin
   new.updated_at = now();
   return new;
@@ -131,21 +128,12 @@ end;
 $$;
 
 drop trigger if exists parcels_set_updated_at on public.parcels;
-create trigger parcels_set_updated_at
-before update on public.parcels
-for each row execute function public.set_sahinaksha_updated_at();
-
+create trigger parcels_set_updated_at before update on public.parcels for each row execute function public.set_sahinaksha_updated_at();
 drop trigger if exists validation_issues_set_updated_at on public.validation_issues;
-create trigger validation_issues_set_updated_at
-before update on public.validation_issues
-for each row execute function public.set_sahinaksha_updated_at();
-
+create trigger validation_issues_set_updated_at before update on public.validation_issues for each row execute function public.set_sahinaksha_updated_at();
 drop trigger if exists processing_jobs_set_updated_at on public.processing_jobs;
-create trigger processing_jobs_set_updated_at
-before update on public.processing_jobs
-for each row execute function public.set_sahinaksha_updated_at();
+create trigger processing_jobs_set_updated_at before update on public.processing_jobs for each row execute function public.set_sahinaksha_updated_at();
 
--- PostGIS write helper. SECURITY INVOKER means normal RLS still applies.
 create or replace function public.set_parcel_native_geometry(
   p_parcel_id uuid,
   p_geometry jsonb,
@@ -155,16 +143,13 @@ returns void
 language plpgsql
 security invoker
 set search_path = public
-as $
+as $$
 begin
   update public.parcels
   set
     geom_native = case
       when p_geometry is null then null
-      else ST_SetSRID(
-        ST_GeomFromGeoJSON(p_geometry::text),
-        coalesce(p_srid, 0)
-      )
+      else ST_SetSRID(ST_GeomFromGeoJSON(p_geometry::text), coalesce(p_srid, 0))
     end,
     geom_crs = case
       when coalesce(p_srid, 0) = 0 then geom_crs
@@ -185,83 +170,19 @@ alter table public.reviews enable row level security;
 alter table public.exports enable row level security;
 
 drop policy if exists "project owners can manage projects" on public.projects;
-create policy "project owners can manage projects"
-on public.projects for all
-using (owner_id = auth.uid())
-with check (owner_id = auth.uid());
-
+create policy "project owners can manage projects" on public.projects for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 drop policy if exists "project owners can access surveys" on public.surveys;
-create policy "project owners can access surveys"
-on public.surveys for all
-using (exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid()))
-with check (exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid()));
-
+create policy "project owners can access surveys" on public.surveys for all using (exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid())) with check (exists (select 1 from public.projects p where p.id = project_id and p.owner_id = auth.uid()));
 drop policy if exists "project owners can access parcels" on public.parcels;
-create policy "project owners can access parcels"
-on public.parcels for all
-using (exists (
-  select 1 from public.surveys s join public.projects p on p.id = s.project_id
-  where s.id = survey_id and p.owner_id = auth.uid()
-))
-with check (exists (
-  select 1 from public.surveys s join public.projects p on p.id = s.project_id
-  where s.id = survey_id and p.owner_id = auth.uid()
-));
-
+create policy "project owners can access parcels" on public.parcels for all using (exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id where s.id = survey_id and p.owner_id = auth.uid())) with check (exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id where s.id = survey_id and p.owner_id = auth.uid()));
 drop policy if exists "project owners can access validation issues" on public.validation_issues;
-create policy "project owners can access validation issues"
-on public.validation_issues for all
-using (exists (
-  select 1 from public.surveys s join public.projects p on p.id = s.project_id
-  where s.id = survey_id and p.owner_id = auth.uid()
-))
-with check (exists (
-  select 1 from public.surveys s join public.projects p on p.id = s.project_id
-  where s.id = survey_id and p.owner_id = auth.uid()
-));
-
+create policy "project owners can access validation issues" on public.validation_issues for all using (exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id where s.id = survey_id and p.owner_id = auth.uid())) with check (exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id where s.id = survey_id and p.owner_id = auth.uid()));
 drop policy if exists "project owners can access processing jobs" on public.processing_jobs;
-create policy "project owners can access processing jobs"
-on public.processing_jobs for all
-using (exists (
-  select 1 from public.surveys s join public.projects p on p.id = s.project_id
-  where s.id = survey_id and p.owner_id = auth.uid()
-))
-with check (
-  created_by = auth.uid()
-  and exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id
-              where s.id = survey_id and p.owner_id = auth.uid())
-);
-
+create policy "project owners can access processing jobs" on public.processing_jobs for all using (exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id where s.id = survey_id and p.owner_id = auth.uid())) with check (created_by = auth.uid() and exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id where s.id = survey_id and p.owner_id = auth.uid()));
 drop policy if exists "project owners can access reviews" on public.reviews;
-create policy "project owners can access reviews"
-on public.reviews for all
-using (exists (
-  select 1 from public.surveys s join public.projects p on p.id = s.project_id
-  where s.id = survey_id and p.owner_id = auth.uid()
-))
-with check (
-  reviewer = auth.uid()
-  and exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id
-              where s.id = survey_id and p.owner_id = auth.uid())
-);
-
+create policy "project owners can access reviews" on public.reviews for all using (exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id where s.id = survey_id and p.owner_id = auth.uid())) with check (reviewer = auth.uid() and exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id where s.id = survey_id and p.owner_id = auth.uid()));
 drop policy if exists "project owners can access exports" on public.exports;
-create policy "project owners can access exports"
-on public.exports for all
-using (exists (
-  select 1 from public.surveys s join public.projects p on p.id = s.project_id
-  where s.id = survey_id and p.owner_id = auth.uid()
-))
-with check (
-  created_by = auth.uid()
-  and exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id
-              where s.id = survey_id and p.owner_id = auth.uid())
-);
+create policy "project owners can access exports" on public.exports for all using (exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id where s.id = survey_id and p.owner_id = auth.uid())) with check (created_by = auth.uid() and exists (select 1 from public.surveys s join public.projects p on p.id = s.project_id where p.id = s.project_id and p.owner_id = auth.uid()));
 
--- Expose only to signed-in users; RLS remains the authorization boundary.
-revoke all on table public.projects, public.surveys, public.parcels, public.validation_issues,
-  public.processing_jobs, public.reviews, public.exports from anon;
-
-grant select, insert, update, delete on table public.projects, public.surveys, public.parcels,
-  public.validation_issues, public.processing_jobs, public.reviews, public.exports to authenticated;
+revoke all on table public.projects, public.surveys, public.parcels, public.validation_issues, public.processing_jobs, public.reviews, public.exports from anon;
+grant select, insert, update, delete on table public.projects, public.surveys, public.parcels, public.validation_issues, public.processing_jobs, public.reviews, public.exports to authenticated;
