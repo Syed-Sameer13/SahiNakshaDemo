@@ -1,6 +1,6 @@
 from pathlib import Path
 from uuid import uuid4
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from .services.analysis import analyze_image
 from .services.export_service import to_json_bytes
@@ -122,3 +122,118 @@ def get_analysis_metrics(analysis_id: str):
         "review_summary": parcels.get("review_summary", {}),
         "evaluation": result.get("evaluation", {"available": False}),
     }
+
+
+
+def _load_analysis_or_404(analysis_id: str):
+    result = ANALYSES.get(analysis_id) or STORE.load(analysis_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis not found.")
+    return result
+
+
+@router.get("/analysis/{analysis_id}/validation")
+def get_validation_results(
+    analysis_id: str,
+    severity: str | None = Query(None, description="INFO, WARNING, ERROR or CRITICAL"),
+    issue_type: str | None = Query(None),
+    status: str | None = Query(None),
+    parcel_id: str | None = Query(None),
+):
+    """Return deterministic parcel validation issues with optional filters."""
+    result = _load_analysis_or_404(analysis_id)
+    validation = result.get("validation", {})
+    issues = list(validation.get("issues", []))
+
+    if severity:
+        severity_value = severity.upper()
+        issues = [i for i in issues if str(i.get("severity", "")).upper() == severity_value]
+    if issue_type:
+        issue_value = issue_type.upper()
+        issues = [i for i in issues if str(i.get("issue_type", "")).upper() == issue_value]
+    if status:
+        status_value = status.upper()
+        issues = [i for i in issues if str(i.get("status", "")).upper() == status_value]
+    if parcel_id:
+        issues = [i for i in issues if str(i.get("parcel_id", "")) == str(parcel_id)]
+
+    return {
+        "analysis_id": analysis_id,
+        "issue_count": len(issues),
+        "filters": {
+            "severity": severity.upper() if severity else None,
+            "issue_type": issue_type.upper() if issue_type else None,
+            "status": status.upper() if status else None,
+            "parcel_id": parcel_id,
+        },
+        "severity_counts": {
+            level: sum(1 for issue in issues if issue.get("severity") == level)
+            for level in ("INFO", "WARNING", "ERROR", "CRITICAL")
+        },
+        "issues": issues,
+    }
+
+
+@router.get("/analysis/{analysis_id}/validation/summary")
+def get_validation_summary(analysis_id: str):
+    """Return project-level validation and review-priority summary."""
+    result = _load_analysis_or_404(analysis_id)
+    validation = result.get("validation", {})
+    parcels = result.get("parcels", {})
+    review_summary = parcels.get("review_summary", {})
+
+    return {
+        "analysis_id": analysis_id,
+        "parcel_count": len(parcels.get("features", [])),
+        "issue_count": validation.get("issue_count", len(validation.get("issues", []))),
+        "severity_counts": validation.get("severity_counts", {}),
+        "status_counts": validation.get("status_counts", {}),
+        "review_priority_counts": review_summary.get("priority_counts", {}),
+        "high_priority_count": review_summary.get("high_priority_count", 0),
+        "mean_review_score": review_summary.get("mean_review_score"),
+        "score_definition": review_summary.get(
+            "score_definition",
+            "Deterministic review-risk indicator for surveyor triage; not AI accuracy or probability.",
+        ),
+    }
+
+
+@router.get("/analysis/{analysis_id}/validation/parcels/{parcel_id}")
+def get_parcel_validation(analysis_id: str, parcel_id: str):
+    """Return one parcel's validation issues and explainable review priority."""
+    result = _load_analysis_or_404(analysis_id)
+    parcels = result.get("parcels", {}).get("features", [])
+    parcel = next(
+        (f for f in parcels if str(f.get("properties", {}).get("parcel_id")) == str(parcel_id)),
+        None,
+    )
+    if parcel is None:
+        raise HTTPException(status_code=404, detail="Parcel not found.")
+
+    issues = [
+        issue for issue in result.get("validation", {}).get("issues", [])
+        if str(issue.get("parcel_id")) == str(parcel_id)
+    ]
+    props = parcel.get("properties", {})
+    return {
+        "analysis_id": analysis_id,
+        "parcel_id": parcel_id,
+        "validation": {
+            "status": props.get("validation_status", "PASS"),
+            "geometry_valid": props.get("geometry_valid"),
+            "issue_count": len(issues),
+            "issues": issues,
+        },
+        "review": {
+            "priority": props.get("review_priority", "LOW"),
+            "score": props.get("review_score"),
+            "reasons": props.get("review_reasons", []),
+            "evidence": props.get("review_evidence", []),
+            "score_definition": props.get(
+                "score_definition",
+                "Deterministic review-risk indicator for surveyor triage; not AI accuracy or probability.",
+            ),
+        },
+        "action": "Surveyor Review Required" if props.get("review_required") else "No additional review flag",
+    }
+}
