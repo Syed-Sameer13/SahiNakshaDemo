@@ -26,12 +26,17 @@ export default function UploadPanel({ project, survey, onComplete, onBack }) {
     if(!API){setError("VITE_API_URL is not configured. Set it to the deployed FastAPI base URL.");return;}
     setError(""); setProgress(5); setStage("Uploading"); await updateSurvey("uploading");
     try {
-      const body=new FormData(); body.append("file",file);
+      const body=new FormData();
+      body.append("file",file);
+      body.append("project_id",String(project?.id||""));
+      body.append("survey_id",String(survey?.id||""));
+      const { data: { session } } = await supabase.auth.getSession();
+      if(!session?.access_token) throw new Error("Authentication session expired. Please sign in again.");
       if(reference)body.append("reference_parcels",reference);
       if(groundTruth)body.append("ground_truth",groundTruth);
       if(dsm)body.append("dsm",dsm);
       setProgress(15); setStage("Validating"); await updateSurvey("validating");
-      const response=await fetch(API.replace(/\/$/,"")+"/analyze",{method:"POST",body});
+      const response=await fetch(API.replace(/\/$/,"")+"/analyze",{method:"POST",body,headers:{Authorization:`Bearer ${session.access_token}`}});
       const type=response.headers.get("content-type")||"";
       const data=type.includes("application/json")?await response.json():{detail:await response.text()};
       if(!response.ok) throw new Error(data.detail||("Backend returned HTTP "+response.status));
