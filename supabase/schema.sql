@@ -154,15 +154,15 @@ create or replace function public.set_parcel_native_geometry(
 returns void
 language plpgsql
 security invoker
-set search_path = public, extensions
-as $$
+set search_path = public
+as $
 begin
   update public.parcels
   set
     geom_native = case
       when p_geometry is null then null
-      else extensions.ST_SetSRID(
-        extensions.ST_GeomFromGeoJSON(p_geometry::text),
+      else ST_SetSRID(
+        ST_GeomFromGeoJSON(p_geometry::text),
         coalesce(p_srid, 0)
       )
     end,
