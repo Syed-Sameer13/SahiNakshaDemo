@@ -1,194 +1,42 @@
 # SahiNaksha Data Model
 
-## 1. Current persistence model
+## 1. Authoritative persistence
+Supabase Postgres + PostGIS is the authoritative persistence layer for projects, surveys, processing jobs, parcels, validation issues, reviews, and exports.
+Browser localStorage is only a temporary UI cache. It is not the source of truth.
+Supabase Auth provides the user identity through auth.users.
 
-SahiNaksha currently has two separate data layers:
+## 2. Relationship model
+User → Project → Survey → Processing Job → Parcels → Validation Issues → Review
+Surveys also own export records.
 
-1. Prototype analysis storage in backend JSON/filesystem.
-2. Supabase/PostGIS schema prepared for future persistent project/survey data.
+## 3. Existing schema preserved
+The original projects, surveys, parcels, and validation_issues tables remain. The schema was extended additively.
 
-They must not be documented as if they are already one integrated database.
+## 4. Parcels
+Persisted parcel data includes parcel_id, survey_id, PostGIS geometry, geometry coordinate-space/CRS metadata, area, perimeter, AI evidence, deterministic review priority, review status, reviewer, timestamps, reference comparison, and provenance.
 
-## 2. Runtime analysis object
+Existing geom is retained as the WGS84 geometry column. New geom_native stores the native geometry. The current AI output uses image-local normalized 0..100 coordinates, so those geometries are stored with SRID 0 and geometry_crs=LOCAL_IMAGE_0_100. The application never falsely labels image-local coordinates as EPSG:4326.
 
-The current `/analyze` pipeline produces a dictionary containing fields such as:
+## 5. Validation issues
+Each issue stores survey_id, parcel_id, issue_type, severity, description, structured evidence, status, resolved flag, and timestamps.
 
-```
-analysis_id
-status
-original_image_url
-buildings
-roads
-parcels
-analysis_mode
-ai_engine
-cadastral_mode
-validation
-topology_stats
-evaluation
-```
+## 6. Processing jobs
+processing_jobs stores survey_id, created_by, analysis_id, status, progress, stage, error message, result snapshot, start/completion timestamps, and audit timestamps.
+The completed result_snapshot allows a user to reopen the latest result after browser refresh or a new login.
 
-### Feature collections
+## 7. Reviews
+reviews stores survey_id, parcel record, parcel_id, authenticated reviewer, decision, comments, previous status, new status, edited geometry, and timestamp.
+The parcel row contains the current review state while reviews preserves decision history.
 
-`buildings`, `roads`, and `parcels` use GeoJSON FeatureCollection structures.
+## 8. Exports
+exports stores survey, processing job, authenticated creator, format, status, file metadata, and timestamp.
 
-Feature properties can contain evidence and review fields such as:
-- feature/parcel identifier,
-- confidence,
-- model provider,
-- review_required,
-- boundary_evidence,
-- geometry_valid,
-- review_score,
-- review_priority,
-- land_use,
-- topology_repaired,
-- area_sq_m where valid.
+## 9. Security
+RLS is enabled for every application table. A user can manage only projects where owner_id equals auth.uid(). Survey, parcel, validation, processing-job, review, and export access is inherited through survey → project ownership.
+Anonymous Data API access is revoked for these application tables. The frontend uses only the Supabase publishable key. No service/secret key is shipped to the browser.
+FastAPI also validates the Supabase bearer token and forwards that user token to Supabase PostgREST so RLS remains the database authorization boundary.
 
-The exact properties vary by provider and processing path.
+## 10. Persistence lifecycle
+Login → Project in Supabase → Survey in Supabase → authenticated /analyze request → processing job → AI/GIS processing → parcels/PostGIS → validation issues → completed result snapshot → surveyor review → parcel latest state + review history → export audit record.
 
-## 3. Backend prototype storage
-
-`backend/app/services/storage.py` provides:
-
-```
-AnalysisStore
-  save(analysis_id, payload)
-  load(analysis_id)
-```
-
-Files are written under:
-
-```
-backend/outputs/analyses/<analysis_id>.json
-```
-
-The API also maintains an in-process `ANALYSES` dictionary.
-
-This is prototype persistence, not the final database architecture.
-
-## 4. Supabase/PostGIS schema
-
-Source:
-`supabase/schema.sql`
-
-### projects
-
-| Column | Type | Purpose |
-|---|---|---|
-| id | uuid | Project identifier |
-| owner_id | uuid | References `auth.users` |
-| name | text | Project name |
-| description | text | Optional description |
-| created_at | timestamptz | Creation time |
-
-RLS currently permits the project owner to manage the project.
-
-### surveys
-
-| Column | Type | Purpose |
-|---|---|---|
-| id | uuid | Survey identifier |
-| project_id | uuid | Parent project |
-| name | text | Survey name |
-| source_image_url | text | Source image location |
-| source_crs | text | Source CRS |
-| status | text | Survey status |
-| created_at | timestamptz | Creation time |
-
-### parcels
-
-| Column | Type | Purpose |
-|---|---|---|
-| id | uuid | Database identifier |
-| survey_id | uuid | Parent survey |
-| parcel_id | text | Domain parcel identifier |
-| geom | geometry | PostGIS geometry, SRID 4326 |
-| area_sq_m | double precision | Area |
-| review_score | double precision | Review-priority score |
-| review_priority | text | Priority category |
-| status | text | Candidate/review state |
-| properties | jsonb | Additional attributes |
-| created_at | timestamptz | Creation time |
-
-### validation_issues
-
-| Column | Type | Purpose |
-|---|---|---|
-| id | uuid | Issue identifier |
-| survey_id | uuid | Parent survey |
-| parcel_id | text | Optional affected parcel |
-| issue_type | text | Issue category |
-| severity | text | Severity |
-| description | text | Explanation |
-| resolved | boolean | Resolution state |
-| created_at | timestamptz | Creation time |
-
-## 5. Authentication and authorization model
-
-Current:
-- Supabase Auth exists in the frontend.
-- Database RLS uses `auth.uid()`.
-- FastAPI does not currently enforce the Supabase user identity.
-
-Therefore database authorization is prepared, but API-level identity propagation is incomplete.
-
-## 6. Surveyor workflow data
-
-Target persistent entities:
-
-```
-User
-  └─ Project
-       └─ Survey
-            ├─ source datasets
-            ├─ processing status
-            ├─ parcel candidates
-            ├─ validation issues
-            ├─ review decisions
-            └─ exports
-```
-
-Only part of this hierarchy is currently runtime-backed.
-
-## 7. Administrator data
-
-No administrator-specific tables or role claims are currently implemented.
-
-Administrator role/RBAC should be added only when the admin workflow is implemented. Do not infer admin privileges from the current project-owner RLS policy.
-
-## 8. Data lifecycle
-
-Current:
-
-```
-Upload
- → temporary file
- → analysis
- → JSON analysis store
- → API response
- → browser localStorage review state
- → browser GeoJSON export
-```
-
-Planned production lifecycle:
-
-```
-Upload
- → project/survey record
- → validated source datasets
- → processing status
- → PostGIS candidate features
- → validation/review
- → persistent review decisions
- → export package
- → audit history
-```
-
-## 9. Geospatial data constraints
-
-The current implementation is not a general geospatial ETL engine.
-
-Reference parcel refinement currently expects image-local normalized coordinates from 0 to 100. Although the database schema uses PostGIS geometry with SRID 4326, the current analysis service does not perform the transformation needed to safely move arbitrary geographic coordinates into image-local coordinates.
-
-This must be resolved before claiming full georeferenced cadastral processing.
+Refreshing the browser or logging out does not remove authoritative records.
